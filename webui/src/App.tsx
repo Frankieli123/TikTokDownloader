@@ -40,19 +40,21 @@ export default function App() {
   const needDisclaimer = Boolean(appInfo) && !Boolean(appInfo?.disclaimer_accepted)
 
   return (
-    <div className="flex h-screen bg-background text-foreground">
-      <Sidebar />
-      <main className="flex-1 overflow-auto p-6">
-        <ErrorBoundary>
-          <Routes>
-            <Route path="/" element={<Navigate to="/download" replace />} />
-            <Route path="/download" element={<DownloadPage />} />
-            <Route path="/collect" element={<CollectPage />} />
-            <Route path="/tasks" element={<TasksPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-          </Routes>
-        </ErrorBoundary>
-      </main>
+    <div className="h-screen w-full bg-gradient-to-br from-gray-50 to-gray-100 p-4 text-foreground dark:from-neutral-900 dark:to-neutral-800">
+      <div className="mx-auto flex h-full w-full max-w-screen-2xl overflow-hidden rounded-2xl bg-background/80 shadow-2xl ring-1 ring-black/5 backdrop-blur-xl dark:bg-background/50 dark:ring-white/10">
+        <Sidebar />
+        <main className="flex-1 overflow-auto bg-muted/10 p-6 lg:p-8">
+          <ErrorBoundary>
+            <Routes>
+              <Route path="/" element={<Navigate to="/download" replace />} />
+              <Route path="/download" element={<DownloadPage />} />
+              <Route path="/collect" element={<CollectPage />} />
+              <Route path="/tasks" element={<TasksPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+            </Routes>
+          </ErrorBoundary>
+        </main>
+      </div>
 
       {needDisclaimer && appInfo ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-6 backdrop-blur-sm">

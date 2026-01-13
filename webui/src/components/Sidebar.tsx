@@ -13,11 +13,11 @@ export function Sidebar() {
   ] as const
 
   return (
-    <aside className="flex h-screen w-64 flex-col border-r bg-card/60 backdrop-blur supports-[backdrop-filter]:bg-card/60">
-      <div className="border-b px-5 py-4 text-sm font-semibold">
+    <aside className="flex h-full w-64 flex-col bg-muted/30">
+      <div className="px-6 py-6 text-sm font-bold tracking-tight">
         DouK-Downloader
       </div>
-      <nav className="flex-1 space-y-1 p-3">
+      <nav className="flex-1 space-y-1 px-4">
         {items.map((item) => (
           <NavLink
             key={item.to}
@@ -25,7 +25,7 @@ export function Sidebar() {
             className={({ isActive }) =>
               cn(
                 buttonVariants({ variant: isActive ? "default" : "ghost" }),
-                "w-full justify-start gap-2"
+                "w-full justify-start gap-2 font-medium"
               )
             }
           >
@@ -34,7 +34,7 @@ export function Sidebar() {
           </NavLink>
         ))}
       </nav>
-      <div className="border-t px-5 py-3 text-xs text-muted-foreground">
+      <div className="px-6 py-4 text-xs font-medium text-muted-foreground/60">
         本机 Web UI
       </div>
     </aside>
