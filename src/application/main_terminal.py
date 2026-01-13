@@ -2225,7 +2225,7 @@ class TikTok:
             return None
         if source:
             return collection
-        await self._batch_process_detail(
+        return await self._batch_process_detail(
             collection,
             api,
             tiktok=tiktok,
@@ -2256,7 +2256,7 @@ class TikTok:
             return None
         if source:
             return data
-        await self._batch_process_detail(
+        return await self._batch_process_detail(
             data,
             mode="collects",
             collect_id=id_,

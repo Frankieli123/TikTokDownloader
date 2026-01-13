@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+from asyncio import create_task, to_thread
 from textwrap import dedent
 from typing import TYPE_CHECKING
 
@@ -84,6 +87,7 @@ class APIServer(TikTok):
         host=SERVER_HOST,
         port=SERVER_PORT,
         log_level="info",
+        stop_event=None,
     ):
         self.server = FastAPI(
             debug=VERSION_BETA,
@@ -98,6 +102,14 @@ class APIServer(TikTok):
             log_level=log_level,
         )
         server = Server(config)
+
+        async def wait_for_stop():
+            await to_thread(stop_event.wait)
+            server.should_exit = True
+
+        if stop_event is not None:
+            create_task(wait_for_stop())
+
         await server.serve()
 
     def setup_routes(self):
@@ -148,7 +160,9 @@ class APIServer(TikTok):
         async def handle_settings(
             extract: Settings, token: str = Depends(token_dependency)
         ):
-            await self.parameter.set_settings_data(extract.model_dump())
+            await self.parameter.set_settings_data(
+                extract.model_dump(by_alias=True, exclude_unset=True)
+            )
             return Settings(**self.parameter.get_settings_data())
 
         @self.server.get(

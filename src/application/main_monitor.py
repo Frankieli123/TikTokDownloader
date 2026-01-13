@@ -35,13 +35,15 @@ class ClipboardMonitor(TikTok):
     async def start_listener(
         self,
         delay: int | float = 1,
+        reset_clipboard: bool = True,
     ):
         self.console.info(
             _(
                 "程序会自动检测并提取剪贴板中的抖音和 TikTok 作品链接，并自动下载作品文件；如需关闭，请按下 Ctrl+C，或将剪贴板内容设置为“close”以停止监听！"
             ),
         )
-        copy("")
+        if reset_clipboard:
+            copy("")
         self.event_clipboard.clear()
         await gather(
             self.check_clipboard(

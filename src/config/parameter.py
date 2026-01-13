@@ -703,6 +703,9 @@ class Parameter:
         elif self.cookie_str:
             self.headers["Cookie"] = self.cookie_str
             self.headers_download["Cookie"] = self.cookie_str
+        else:
+            self.headers.pop("Cookie", None)
+            self.headers_download.pop("Cookie", None)
         if self.cookie_dict_tiktok:
             cookie = cookie_dict_to_str(self.cookie_dict_tiktok)
             self.headers_tiktok["Cookie"] = cookie
@@ -710,6 +713,9 @@ class Parameter:
         elif self.cookie_str_tiktok:
             self.headers_tiktok["Cookie"] = self.cookie_str_tiktok
             self.headers_download_tiktok["Cookie"] = self.cookie_str_tiktok
+        else:
+            self.headers_tiktok.pop("Cookie", None)
+            self.headers_download_tiktok.pop("Cookie", None)
 
     def set_download_headers(self) -> None:
         self.__update_download_headers()
@@ -805,13 +811,11 @@ class Parameter:
     def set_uif_id(
         self,
     ) -> None:
+        API.params["uifid"] = ""
         if self.cookie_dict:
             API.params["uifid"] = self.cookie_dict.get("UIFID", "")
         elif self.cookie_str:
-            API.params["uifid"] = self.get_cookie_value(
-                self.cookie_str,
-                "UIFID",
-            )
+            API.params["uifid"] = self.get_cookie_value(self.cookie_str, "UIFID")
 
     @staticmethod
     def __generate_ffmpeg_object(ffmpeg_path: str) -> FFMPEG:
@@ -846,49 +850,74 @@ class Parameter:
             "download": self.download,
             "max_size": self.max_size,
             "chunk": self.chunk,
+            "timeout": self.timeout,
             "max_retry": self.max_retry,
             "max_pages": self.max_pages,
             "run_command": " ".join(self.run_command[::-1]),
             "ffmpeg": self.ffmpeg.path or "",
+            "live_qualities": self.live_qualities,
+            "douyin_platform": self.douyin_platform,
+            "tiktok_platform": self.tiktok_platform,
+            "browser_info": self.browser_info,
+            "browser_info_tiktok": self.browser_info_tiktok,
         }
 
     async def set_settings_data(
         self,
         data: dict,
     ) -> None:
-        self.set_urls_params(
-            data.pop("accounts_urls"),
-            data.pop("mix_urls"),
-            data.pop("owner_url"),
-            data.pop("accounts_urls_tiktok"),
-            data.pop("mix_urls_tiktok"),
-            data.pop("owner_url_tiktok"),
-        )
-        self.set_cookie(
-            data.pop(
-                "cookie",
-            ),
-            data.pop(
-                "cookie_tiktok",
-            ),
-        )
-        self.set_browser_info(
-            data.pop(
-                "browser_info",
-            ),
-            data.pop(
-                "browser_info_tiktok",
-            ),
-        )
-        await self.set_proxy(
-            data.pop(
-                "proxy",
-            ),
-            data.pop(
-                "proxy_tiktok",
-            ),
-        )
+        accounts_urls = data.pop("accounts_urls", None)
+        mix_urls = data.pop("mix_urls", None)
+        owner_url = data.pop("owner_url", None)
+        accounts_urls_tiktok = data.pop("accounts_urls_tiktok", None)
+        mix_urls_tiktok = data.pop("mix_urls_tiktok", None)
+        data.pop("owner_url_tiktok", None)  # reserved
+        if any(
+            i is not None
+            for i in (
+                accounts_urls,
+                mix_urls,
+                owner_url,
+                accounts_urls_tiktok,
+                mix_urls_tiktok,
+            )
+        ):
+            self.set_urls_params(
+                accounts_urls=accounts_urls,
+                mix_urls=mix_urls,
+                owner_url=owner_url,
+                accounts_urls_tiktok=accounts_urls_tiktok,
+                mix_urls_tiktok=mix_urls_tiktok,
+                owner_url_tiktok=None,
+            )
+
+        cookie = data.pop("cookie", None)
+        cookie_tiktok = data.pop("cookie_tiktok", None)
+        if cookie is not None or cookie_tiktok is not None:
+            self.set_cookie(
+                cookie if cookie is not None else (self.cookie_str or self.cookie_dict),
+                cookie_tiktok
+                if cookie_tiktok is not None
+                else (self.cookie_str_tiktok or self.cookie_dict_tiktok),
+            )
+
+        browser_info = data.pop("browser_info", None)
+        browser_info_tiktok = data.pop("browser_info_tiktok", None)
+        if browser_info is not None or browser_info_tiktok is not None:
+            self.set_browser_info(browser_info or {}, browser_info_tiktok or {})
+
+        proxy = data.pop("proxy", None)
+        proxy_tiktok = data.pop("proxy_tiktok", None)
+
+        old_timeout = self.timeout
         self.set_general_params(data)
+        if isinstance(proxy, str) or isinstance(proxy_tiktok, str):
+            await self.set_proxy(proxy, proxy_tiktok)
+        elif self.timeout != old_timeout:
+            await self.close_client()
+            self.client = create_client(timeout=self.timeout, proxy=self.proxy)
+            self.client_tiktok = create_client(timeout=self.timeout, proxy=self.proxy_tiktok)
+        self.settings.update(self.get_settings_data())
 
     async def __update_cookie_data(self, data: dict) -> None:
         for i, j in zip(("cookie", "cookie_tiktok"), (_("抖音"), "TikTok")):
@@ -922,22 +951,22 @@ class Parameter:
 
     def set_urls_params(
         self,
-        accounts_urls: list[dict],
-        mix_urls: list[dict],
-        owner_url: dict,
-        accounts_urls_tiktok: list[dict],
-        mix_urls_tiktok: list[dict],
-        owner_url_tiktok: dict,
+        accounts_urls: list[dict] | None = None,
+        mix_urls: list[dict] | None = None,
+        owner_url: dict | None = None,
+        accounts_urls_tiktok: list[dict] | None = None,
+        mix_urls_tiktok: list[dict] | None = None,
+        owner_url_tiktok: dict | None = None,
     ):
-        if accounts_urls:
+        if accounts_urls is not None:
             self.accounts_urls = self.check_urls_params(accounts_urls)
-        if accounts_urls_tiktok:
+        if accounts_urls_tiktok is not None:
             self.accounts_urls_tiktok = self.check_urls_params(accounts_urls_tiktok)
-        if mix_urls:
+        if mix_urls is not None:
             self.mix_urls = self.check_urls_params(mix_urls)
-        if mix_urls_tiktok:
+        if mix_urls_tiktok is not None:
             self.mix_urls_tiktok = self.check_urls_params(mix_urls_tiktok)
-        if owner_url:
+        if owner_url is not None:
             self.owner_url = self.check_url_params(owner_url)
         # if owner_url_tiktok:
         #     self.owner_url_tiktok = self.check_url_params(owner_url_tiktok)
@@ -945,23 +974,20 @@ class Parameter:
     def set_cookie(
         self, cookie: str | dict[str, str], cookie_tiktok: str | dict[str, str]
     ):
-        if cookie:
-            self.cookie_dict, self.cookie_str = self.__check_cookie(cookie)
-            self.cookie_state: bool = self.__check_cookie_state()
-            self.set_uif_id()
-        if cookie_tiktok:
-            self.cookie_dict_tiktok, self.cookie_str_tiktok = (
-                self.__check_cookie_tiktok(
-                    cookie_tiktok,
-                )
-            )
-            self.cookie_tiktok_state: bool = self.__check_cookie_state(True)
-            self.__update_download_headers_tiktok()
+        self.cookie_dict, self.cookie_str = self.__check_cookie(cookie)
+        self.cookie_state = self.__check_cookie_state()
+        self.set_uif_id()
+        self.cookie_dict_tiktok, self.cookie_str_tiktok = self.__check_cookie_tiktok(
+            cookie_tiktok
+        )
+        self.cookie_tiktok_state = self.__check_cookie_state(True)
+        self.set_headers_cookie()
+        self.__update_download_headers_tiktok()
 
     def set_general_params(self, data: dict[str, Any]) -> None:
         for i, j in data.items():
             if j is not None:
-                self.__CHECK[i](j)
+                setattr(self, i, self.__CHECK[i](j))
 
     async def set_proxy(self, proxy: str | None, proxy_tiktok: str | None):
         if isinstance(proxy, str):

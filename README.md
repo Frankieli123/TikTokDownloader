@@ -90,7 +90,20 @@
 
 ## Web UI 交互模式
 
-> **项目代码已重构，该模式代码尚未更新，未来开发完成重新开放！**
+> Windows 桌面 GUI：直接运行 `python main.py` 会启动桌面窗口（内置 Web UI，仅本机）。
+> 如需终端交互模式：`python main.py --cli`
+>
+> 启动该模式后，访问 `http://127.0.0.1:5555/ui` 打开 Web UI（默认仅绑定 `127.0.0.1`）。
+
+如需重新构建 Web UI 前端页面：
+
+```bash
+cd webui
+npm install
+npm run build
+```
+
+构建产物输出到 `static/webui/`，由程序自动托管。
 
 ## Web API 接口模式
 

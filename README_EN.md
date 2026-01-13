@@ -91,8 +91,17 @@
 
 ## Web UI interaction mode
 
-> **The project code has been refactored; the code for this mode has not yet been updated. It will be reopened after
-future development is completed!**
+> After starting this mode, open `http://127.0.0.1:5555/ui` (binds to `127.0.0.1` by default).
+
+Rebuild the Web UI frontend:
+
+```bash
+cd webui
+npm install
+npm run build
+```
+
+Build artifacts are written to `static/webui/` and served by the app.
 
 ## Web API mode
 

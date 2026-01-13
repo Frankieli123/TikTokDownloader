@@ -39,6 +39,7 @@ from src.translation import _, switch_language
 from .main_monitor import ClipboardMonitor
 from .main_server import APIServer
 from .main_terminal import TikTok
+from .main_webui import WebUIServer
 
 # from typing import Type
 # from webbrowser import open
@@ -117,7 +118,7 @@ class TikTokDownloader:
             (_("终端交互模式"), self.complete),
             (_("后台监听模式"), self.monitor),
             (_("Web API 模式"), self.server),
-            (_("Web UI 模式"), self.disable_function),
+            (_("Web UI 模式"), self.webui),
             # (_("Web API 模式"), self.__api_object),
             # (_("Web UI 模式"), self.__web_ui_object),
             (
@@ -155,6 +156,22 @@ class TikTokDownloader:
                 self.database,
             ).run_server(
                 SERVER_HOST,
+                SERVER_PORT,
+            )
+        except KeyboardInterrupt:
+            self.running = False
+
+    async def webui(self):
+        try:
+            self.console.print(
+                _("访问 http://127.0.0.1:5555/ui 打开 Web UI 界面"),
+                highlight=True,
+            )
+            await WebUIServer(
+                self.parameter,
+                self.database,
+            ).run_server(
+                "127.0.0.1",
                 SERVER_PORT,
             )
         except KeyboardInterrupt:

@@ -6,3 +6,6 @@ __pycache__/
 /.run/
 /Volume/
 !/.github/
+/webui/node_modules/
+/webui/dist/
+/webui/.vite/

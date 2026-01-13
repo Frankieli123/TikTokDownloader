@@ -1,10 +1,13 @@
-from asyncio import CancelledError
-from asyncio import run
+from __future__ import annotations
+
+from asyncio import CancelledError, run
+from sys import argv
 
 from src.application import TikTokDownloader
+from src.application.main_desktop import run_desktop
 
 
-async def main():
+async def main_cli():
     async with TikTokDownloader() as downloader:
         try:
             await downloader.run()
@@ -16,4 +19,7 @@ async def main():
 
 
 if __name__ == "__main__":
-    run(main())
+    if "--cli" in argv:
+        run(main_cli())
+    else:
+        run_desktop()
