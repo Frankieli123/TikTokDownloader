@@ -38,25 +38,62 @@ def _wait_http_ok(url: str, timeout_s: float) -> bool:
 
 
 def run_desktop() -> None:
+    import os
+    import sys
+    import traceback
+    from datetime import datetime
+    from pathlib import Path
+
+    log_path = (
+        Path(os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or Path.home())
+        / "DouK-Downloader"
+        / "logs"
+        / "desktop.log"
+    )
+
+    def _log(text: str) -> None:
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open("a", encoding="utf-8") as f:
+                f.write(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {text}\n")
+        except Exception:
+            pass
+
+    def _alert(text: str) -> None:
+        if sys.platform == "win32":
+            try:
+                import ctypes
+
+                ctypes.windll.user32.MessageBoxW(0, text, PROJECT_NAME, 0x10)
+                return
+            except Exception:
+                pass
+        print(text)
+
     port = _pick_port(SERVER_PORT)
     stop_event = Event()
+    backend_errors: list[str] = []
 
     def backend():
         from asyncio import run
 
         async def runner():
-            async with TikTokDownloader() as downloader:
-                downloader.check_config()
-                await downloader.check_settings(False)
-                await WebUIServer(
-                    downloader.parameter,
-                    downloader.database,
-                ).run_server(
-                    host="127.0.0.1",
-                    port=port,
-                    log_level="warning",
-                    stop_event=stop_event,
-                )
+            try:
+                async with TikTokDownloader() as downloader:
+                    downloader.check_config()
+                    await downloader.check_settings(False)
+                    await WebUIServer(
+                        downloader.parameter,
+                        downloader.database,
+                    ).run_server(
+                        host="127.0.0.1",
+                        port=port,
+                        log_level="warning",
+                        stop_event=stop_event,
+                    )
+            except Exception:
+                backend_errors.append(traceback.format_exc())
+                _log(backend_errors[-1].rstrip())
 
         run(runner())
 
@@ -68,12 +105,26 @@ def run_desktop() -> None:
     thread.start()
 
     base = f"http://127.0.0.1:{port}"
-    if not _wait_http_ok(f"{base}/ui-api/repository", timeout_s=10):
+    repository_url = f"{base}/ui-api/repository"
+    deadline = monotonic() + 30
+    ok = False
+    while monotonic() < deadline:
+        if _wait_http_ok(repository_url, timeout_s=1.0):
+            ok = True
+            break
+        if backend_errors or not thread.is_alive():
+            break
+    if not ok:
+        reason = "后台服务启动超时"
+        if backend_errors:
+            reason = backend_errors[-1].strip().splitlines()[-1]
+        _log(f"desktop startup failed: {reason}")
+        _alert(f"{PROJECT_NAME}\n\n无法启动后台服务：{reason}\n\n日志：{log_path}")
         stop_event.set()
+        thread.join(timeout=3)
         return
 
     url = f"{base}/ui"
-    import sys
 
     def _win_message_box(text: str, title: str, flags: int) -> int:
         import ctypes

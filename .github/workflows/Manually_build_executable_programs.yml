@@ -6,12 +6,54 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    name: 构建于 ${{ matrix.os }}
+  build_windows_push:
+    name: 构建 (Windows / push)
+    if: github.event_name == 'push'
+    runs-on: windows-latest
+    steps:
+      - name: 签出存储库
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安装依赖项
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: 构建可执行文件
+        run: |
+          echo "DATE=$(Get-Date -Format 'yyyyMMdd')" >> $env:GITHUB_ENV
+          pyinstaller --noconsole --uac-admin --icon=./static/images/DouK-Downloader.ico --add-data "static:static" --add-data "locale:locale" --collect-all emoji main.py
+        shell: pwsh
+
+      - name: 上传文件
+        uses: actions/upload-artifact@v4
+        with:
+          name: DouK-Downloader_Windows_${{ runner.arch }}_${{ env.DATE }}
+          path: dist/main/
+
+  build_matrix_manual:
+    name: 构建 (手动 / ${{ matrix.os }})
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.optional }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [ windows-latest, windows-11-arm, macos-15-intel, macos-latest ]
+        include:
+          - os: windows-latest
+            optional: false
+          - os: windows-11-arm
+            optional: true
+          - os: macos-latest
+            optional: true
+          - os: macos-15-intel
+            optional: true
 
     steps:
       - name: 签出存储库
