@@ -75,11 +75,110 @@ def run_desktop() -> None:
     url = f"{base}/ui"
     import sys
 
+    def _win_message_box(text: str, title: str, flags: int) -> int:
+        import ctypes
+
+        return int(ctypes.windll.user32.MessageBoxW(0, text, title, flags))
+
+    def _webview2_version() -> str | None:
+        if sys.platform != "win32":
+            return None
+        try:
+            import clr
+            from webview.util import interop_dll_path
+
+            clr.AddReference(interop_dll_path("Microsoft.Web.WebView2.Core.dll"))
+            from Microsoft.Web.WebView2.Core import CoreWebView2Environment
+
+            v = CoreWebView2Environment.GetAvailableBrowserVersionString()
+            return str(v) if v else None
+        except Exception:
+            return None
+
+    def _install_webview2_runtime() -> bool:
+        if sys.platform != "win32":
+            return False
+        import tempfile
+        from pathlib import Path
+        from subprocess import DEVNULL, run
+        from urllib.request import urlretrieve
+
+        exe = Path(tempfile.gettempdir()).joinpath("MicrosoftEdgeWebview2Setup.exe")
+        try:
+            urlretrieve("https://go.microsoft.com/fwlink/p/?LinkId=2124703", str(exe))
+        except Exception:
+            return False
+
+        try:
+            run(
+                [str(exe), "/silent", "/install"],
+                stdout=DEVNULL,
+                stderr=DEVNULL,
+                check=False,
+                creationflags=0x08000000,
+            )
+        except Exception:
+            return False
+
+        deadline = monotonic() + 180
+        while monotonic() < deadline:
+            if _webview2_version():
+                try:
+                    exe.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                return True
+            sleep(0.5)
+        return False
+
+    def _ensure_webview2_runtime() -> bool:
+        if sys.platform != "win32":
+            return True
+        if _webview2_version():
+            return True
+
+        r = _win_message_box(
+            f"{PROJECT_NAME}\n\n未检测到 Microsoft Edge WebView2 Runtime，是否现在安装？\n\n需要联网下载，可能需要 1-3 分钟。\n安装完成后将继续启动。",
+            PROJECT_NAME,
+            0x04 | 0x20,
+        )
+        if r != 6:
+            return False
+
+        ok = _install_webview2_runtime()
+        if ok:
+            _win_message_box("WebView2 Runtime 安装完成。", PROJECT_NAME, 0x00 | 0x40)
+        else:
+            _win_message_box("WebView2 Runtime 安装失败，请手动安装后重试。", PROJECT_NAME, 0x00 | 0x10)
+        return ok
+
     def fallback(reason: str) -> None:
+        is_frozen = bool(getattr(sys, "frozen", False) or getattr(sys, "_MEIPASS", None))
+        if is_frozen:
+            message = (
+                f"{PROJECT_NAME}\n\n"
+                f"桌面窗口启动失败：{reason}\n\n"
+                "请安装/修复 Microsoft Edge WebView2 Runtime 后重试（Windows 11 通常已自带）"
+            )
+            try:
+                if sys.platform == "win32":
+                    import ctypes
+
+                    ctypes.windll.user32.MessageBoxW(0, message, PROJECT_NAME, 0x10)
+                    return
+            except Exception:
+                pass
+            print(message)
+            return
+
         print(f"[desktop] 已退回浏览器模式：{reason}")
         print(f"[desktop] 当前解释器：{sys.executable}")
-        print("[desktop] 若需要桌面窗口：先安装依赖 `uv pip install -r requirements.txt`，再用 `uv run python main.py` 或 `.venv\\Scripts\\python main.py` 启动")
-        print("[desktop] 如仍无法弹窗：安装/修复 Microsoft Edge WebView2 Runtime（Windows 11 通常已自带）")
+        print(
+            "[desktop] 若需要桌面窗口：先安装依赖 `uv pip install -r requirements.txt`，再用 `uv run python main.py` 或 `.venv\\Scripts\\python main.py` 启动"
+        )
+        print(
+            "[desktop] 如仍无法弹窗：安装/修复 Microsoft Edge WebView2 Runtime（Windows 11 通常已自带）"
+        )
 
         import webbrowser
 
@@ -95,6 +194,15 @@ def run_desktop() -> None:
     except Exception as e:
         try:
             fallback(f"pywebview 不可用：{e!r}")
+        finally:
+            stop_event.set()
+            thread.join(timeout=3)
+        return
+
+    is_frozen = bool(getattr(sys, "frozen", False) or getattr(sys, "_MEIPASS", None))
+    if is_frozen and not _ensure_webview2_runtime():
+        try:
+            fallback("用户取消安装 WebView2 Runtime")
         finally:
             stop_event.set()
             thread.join(timeout=3)
