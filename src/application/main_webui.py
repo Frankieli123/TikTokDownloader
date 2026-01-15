@@ -4,6 +4,9 @@ from asyncio import CancelledError, Lock, Queue, create_task, wait_for
 from collections import deque
 from dataclasses import dataclass, field
 from json import dumps
+from pathlib import Path
+from platform import system
+from subprocess import Popen
 from time import time
 from typing import Any, Literal
 from uuid import uuid4
@@ -329,6 +332,18 @@ class WebUIServer(APIServer):
             return Path(meipass)
         return Path(__file__).resolve().parent.parent.parent
 
+    @staticmethod
+    def _open_folder(path: Path) -> None:
+        if not path.exists():
+            raise FileNotFoundError(str(path))
+        match system():
+            case "Windows":
+                Popen(["explorer", str(path)])
+            case "Darwin":
+                Popen(["open", str(path)])
+            case _:
+                Popen(["xdg-open", str(path)])
+
     def _setup_ui_api_routes(self):
         def _platform_cookie_key(platform: str) -> str:
             return "cookie_tiktok" if platform == "tiktok" else "cookie"
@@ -646,6 +661,31 @@ class WebUIServer(APIServer):
         )
         async def get_task(task_id: str, token: str = Depends(token_dependency)):
             return self.ui_tasks.get(task_id).snapshot()
+
+        @self.server.post(
+            "/ui-api/tasks/{task_id}/open-folder",
+            tags=["WebUI"],
+        )
+        async def open_task_folder(task_id: str, token: str = Depends(token_dependency)):
+            task = self.ui_tasks.get(task_id)
+            if not task.type.startswith("download."):
+                raise HTTPException(status_code=400, detail="task is not a download task")
+
+            folder = (
+                self.parameter.root.joinpath(self.parameter.folder_name)
+                if task.type in {"download.detail", "download.tiktok_original"}
+                else self.parameter.root
+            )
+            folder.mkdir(parents=True, exist_ok=True)
+            folder = folder.resolve()
+            try:
+                self._open_folder(folder)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"open folder failed: {e!r}",
+                ) from None
+            return {"ok": True}
 
         @self.server.get(
             "/ui-api/tasks/{task_id}/events",

@@ -1,5 +1,8 @@
-from re import compile
+from re import IGNORECASE, compile
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
+
+from httpx import get, head
 
 from ..custom import wait
 from ..tools import DownloaderError, Retry, capture_error_request
@@ -14,6 +17,23 @@ __all__ = ["Requester"]
 
 class Requester:
     URL = compile(r"(https?://[^\s\"<>\\^`{|}，。；！？、【】《》]+)")
+    SHORT_NETLOCS = {
+        "v.douyin.com",
+        "vm.tiktok.com",
+        "vt.tiktok.com",
+    }
+    HTML_URL_CANONICAL = compile(
+        r'<link[^>]+rel=["\']canonical["\'][^>]*href=["\'](https?://[^"\']+)["\']',
+        IGNORECASE,
+    )
+    HTML_URL_META_REFRESH = compile(
+        r'<meta[^>]+http-equiv=["\']refresh["\'][^>]*content=["\'][^"\']*url\s*=\s*([^"\'>\s]+)',
+        IGNORECASE,
+    )
+    HTML_URL_ANCHOR = compile(
+        r'<a[^>]+href=["\'](https?://[^"\']+)["\']',
+        IGNORECASE,
+    )
 
     def __init__(
         self,
@@ -46,6 +66,38 @@ class Requester:
             )
             await wait()
         return " ".join(i for i in result if i)
+
+    @staticmethod
+    def _extract_url_from_html(html: str) -> str | None:
+        if not html:
+            return None
+        for pattern in (
+            Requester.HTML_URL_CANONICAL,
+            Requester.HTML_URL_META_REFRESH,
+            Requester.HTML_URL_ANCHOR,
+        ):
+            if m := pattern.search(html):
+                return m.group(1)
+        return None
+
+    async def _resolve_short_link_url(
+        self,
+        url: str,
+        *,
+        proxy: str | None,
+    ) -> str | None:
+        try:
+            response = (
+                self.request_url_get_proxy(url, proxy)
+                if proxy
+                else await self.request_url_get(url)
+            )
+        except Exception:
+            return None
+        resolved = str(getattr(response, "url", "") or "")
+        if resolved and urlparse(resolved).netloc.lower() not in self.SHORT_NETLOCS:
+            return resolved
+        return self._extract_url_from_html(getattr(response, "text", "") or "")
 
     @Retry.retry
     @capture_error_request
@@ -88,7 +140,17 @@ class Requester:
             case "headers":
                 return response.headers
             case "url":
-                return str(response.url)
+                resolved = str(response.url)
+                try:
+                    original_host = urlparse(url).netloc.lower()
+                    resolved_host = urlparse(resolved).netloc.lower()
+                except Exception:
+                    return resolved
+                if original_host in self.SHORT_NETLOCS and resolved_host == original_host:
+                    return (
+                        await self._resolve_short_link_url(url, proxy=proxy) or resolved
+                    )
+                return resolved
             case _:
                 raise DownloaderError
 

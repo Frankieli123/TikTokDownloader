@@ -1,6 +1,8 @@
 name: 构建可执行文件
 
 on:
+  push:
+    branches: [ master, develop ]
   workflow_dispatch:
 
 jobs:

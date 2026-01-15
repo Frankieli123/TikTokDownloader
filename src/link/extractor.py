@@ -68,10 +68,13 @@ class Extractor:
         type_="detail",
         proxy: str = None,
     ) -> Union[list[str], tuple[bool, list[str]], str]:
+        raw_text = text
         text = await self.requester.run(
             text,
             proxy,
         )
+        if not text:
+            text = raw_text
         match type_:
             case "detail":
                 return self.detail(text)
@@ -102,7 +105,9 @@ class Extractor:
         self,
         urls: str,
     ) -> list[str]:
-        return self.__extract_detail(urls)
+        if ids := self.__extract_detail(urls):
+            return ids
+        return self.__extract_detail(urls, allow_id=True)
 
     def user(
         self,
@@ -137,6 +142,7 @@ class Extractor:
     def __extract_detail(
         self,
         urls: str,
+        allow_id: bool = False,
     ) -> list[str]:
         link = self.extract_info(self.detail_link, urls, 1)
         share = self.extract_info(self.detail_share, urls, 1)
@@ -144,7 +150,16 @@ class Extractor:
         search = self.extract_info(self.detail_search, urls, 1)
         discover = self.extract_info(self.detail_discover, urls, 1)
         channel = self.extract_info(self.channel_link, urls, 1)
-        return link + share + account + search + discover + channel
+        extracted = link + share + account + search + discover + channel
+        if allow_id:
+            ids = self.extract_info(self.detail_id, urls, 1)
+            mix = self.extract_info(self.mix_link, urls, 1)
+            mix_share = self.extract_info(self.mix_share, urls, 1)
+            if mix or mix_share:
+                mix_ids = set(mix + mix_share)
+                ids = [i for i in ids if i not in mix_ids]
+            extracted += ids
+        return extracted
 
     @staticmethod
     def extract_sec_user_id(urls: list[str]) -> list[list]:

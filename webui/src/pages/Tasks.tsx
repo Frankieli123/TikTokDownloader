@@ -13,6 +13,7 @@ type ProgressItem = {
   description: string
   total: number | null
   completed: number
+  finished?: boolean
 }
 
 function formatBytes(bytes: number) {
@@ -63,6 +64,15 @@ export function TasksPage() {
     link.download = `task_${selectedTask.id}.json`
     link.click()
     URL.revokeObjectURL(url)
+  }
+
+  const openFolder = async () => {
+    if (!selectedTaskId) return
+    try {
+      await api.openTaskFolder(selectedTaskId)
+    } catch (e) {
+      setError(String(e))
+    }
   }
 
   const refreshTasks = async () => {
@@ -122,6 +132,7 @@ export function TasksPage() {
               description: String(data.description || ""),
               total: data.total === null || data.total === undefined ? null : Number(data.total),
               completed: Number(data.completed || 0),
+              finished: prev[taskId]?.finished,
             },
           }))
           return
@@ -130,11 +141,14 @@ export function TasksPage() {
         if (type === "progress.remove") {
           const taskId = String(data.task_id ?? "")
           if (!taskId) return
-          setProgress((prev) => {
-            const next = { ...prev }
-            delete next[taskId]
-            return next
-          })
+          setProgress((prev) =>
+            prev[taskId]
+              ? {
+                  ...prev,
+                  [taskId]: { ...prev[taskId], finished: true },
+                }
+              : prev
+          )
           return
         }
 
@@ -196,6 +210,11 @@ export function TasksPage() {
           <div className="flex items-center justify-between gap-3">
             <CardTitle className="text-base">任务详情</CardTitle>
             <div className="flex items-center gap-2">
+              {selectedTask?.type.startsWith("download.") ? (
+                <Button variant="outline" size="sm" onClick={() => void openFolder()}>
+                  打开文件夹
+                </Button>
+              ) : null}
               <Button variant="outline" size="sm" onClick={exportLogs} disabled={!selectedTask || logs.length === 0}>
                 导出日志
               </Button>
@@ -248,7 +267,9 @@ export function TasksPage() {
                           ? `${formatBytes(item.completed)} / ${formatBytes(item.total)}`
                           : `${formatBytes(item.completed)}`}
                       </div>
-                      <div className="w-12 shrink-0 text-right font-mono">{item.total ? `${percent}%` : ""}</div>
+                      <div className="w-12 shrink-0 text-right font-mono">
+                        {item.finished ? "已完成" : item.total ? `${percent}%` : ""}
+                      </div>
                     </div>
                   )
                 })}

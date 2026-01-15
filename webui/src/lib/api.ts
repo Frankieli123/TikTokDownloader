@@ -65,6 +65,11 @@ export const api = {
   getTask: async (taskId: string): Promise<UITask> => {
     return requestJson<UITask>(`/ui-api/tasks/${encodeURIComponent(taskId)}`)
   },
+  openTaskFolder: async (taskId: string): Promise<{ ok: boolean }> => {
+    return requestJson<{ ok: boolean }>(`/ui-api/tasks/${encodeURIComponent(taskId)}/open-folder`, {
+      method: "POST",
+    })
+  },
   listDouyinCollects: async (): Promise<{ id: string; name: string }[]> => {
     const data = await requestJson<{ collects: { id: string; name: string }[] }>(
       "/ui-api/douyin/collects"
