@@ -89,17 +89,26 @@ class APIServer(TikTok):
         log_level="info",
         stop_event=None,
     ):
+        import sys
+
         self.server = FastAPI(
             debug=VERSION_BETA,
             title="DouK-Downloader",
             version=__VERSION__,
         )
         self.setup_routes()
+
+        use_colors = None
+        if not callable(getattr(sys.stdout, "isatty", None)) or not callable(
+            getattr(sys.stderr, "isatty", None)
+        ):
+            use_colors = False
         config = Config(
             self.server,
             host=host,
             port=port,
             log_level=log_level,
+            use_colors=use_colors,
         )
         server = Server(config)
 
