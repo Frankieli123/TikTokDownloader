@@ -263,6 +263,9 @@ class WebUIServer(APIServer):
         self._ui_task_lock = Lock()
         self._clipboard_monitor = None
         self._clipboard_monitor_task = None
+        self._clipboard_state_lock = Lock()
+        self._clipboard_inflight_ids: set[str] = set()
+        self._clipboard_seen_urls: dict[str, float] = {}
 
     def setup_routes(self):
         super().setup_routes()
@@ -272,6 +275,7 @@ class WebUIServer(APIServer):
     def _setup_ui_routes(self):
         webui_root = self._get_app_root().joinpath("static", "webui")
         webui_assets = webui_root.joinpath("assets")
+        images_root = self._get_app_root().joinpath("static", "images")
         index_html = webui_root.joinpath("index.html")
 
         if webui_assets.exists():
@@ -279,6 +283,13 @@ class WebUIServer(APIServer):
                 "/ui/assets",
                 StaticFiles(directory=webui_assets),
                 name="ui-assets",
+            )
+
+        if images_root.exists():
+            self.server.mount(
+                "/ui/images",
+                StaticFiles(directory=images_root),
+                name="ui-images",
             )
 
         @self.server.get(
@@ -343,6 +354,165 @@ class WebUIServer(APIServer):
                 Popen(["open", str(path)])
             case _:
                 Popen(["xdg-open", str(path)])
+
+    async def _run_download_detail_ids_task(
+        self,
+        task: UITask,
+        *,
+        tiktok: bool,
+        ids: list[str],
+        cookie: str | None,
+        proxy: str | None,
+    ) -> None:
+        async with self._ui_task_lock:
+            ids = [i for i in ids if i]
+            task.meta["works_count"] = len(ids)
+            task.emit({"type": "meta", **task.meta})
+            if not ids:
+                raise ValueError("no works to download")
+
+            original_progress = self.downloader.general_progress_object
+            self.downloader.general_progress_object = lambda: EventProgress(
+                task.emit,
+                throttle_ms=200,
+                id_prefix=f"{uuid4().hex}:",
+            )
+            try:
+                root, params, logger = self.record.run(self.parameter)
+                async with logger(root, console=self.console, **params) as record:
+                    task.emit({"type": "phase", "name": "download"})
+                    await self._handle_detail(
+                        ids,
+                        tiktok,
+                        record,
+                        False,
+                        False,
+                        cookie=cookie,
+                        proxy=proxy,
+                    )
+            finally:
+                self.downloader.general_progress_object = original_progress
+
+    async def _handle_clipboard_download_text(self, text: str) -> None:
+        urls = _split_inputs(text)
+        if not urls:
+            return
+
+        recorder_enabled = bool(getattr(self.parameter.recorder, "switch", False))
+        now = time()
+        if not recorder_enabled:
+            async with self._clipboard_state_lock:
+                cutoff = now - 60 * 60
+                if self._clipboard_seen_urls:
+                    for url, ts in list(self._clipboard_seen_urls.items()):
+                        if ts < cutoff:
+                            self._clipboard_seen_urls.pop(url, None)
+
+        seen: set[str] = set()
+        unique_urls: list[str] = []
+        for url in urls:
+            if not url.startswith("http"):
+                continue
+            if url in seen:
+                continue
+            seen.add(url)
+            unique_urls.append(url)
+        urls = unique_urls
+        if not urls:
+            return
+
+        if not recorder_enabled:
+            async with self._clipboard_state_lock:
+                filtered_urls: list[str] = []
+                for url in urls:
+                    if url in self._clipboard_seen_urls:
+                        continue
+                    self._clipboard_seen_urls[url] = now
+                    filtered_urls.append(url)
+                urls = filtered_urls
+            if not urls:
+                return
+
+        douyin_urls = [url for url in urls if "douyin.com" in url]
+        tiktok_urls = [url for url in urls if "tiktok.com" in url]
+        if not douyin_urls and not tiktok_urls:
+            return
+
+        if douyin_urls:
+            ids = await self.links.run(" ".join(douyin_urls), proxy=None)
+            ids = [i for i in ids if i]
+            if recorder_enabled:
+                filtered_ids: list[str] = []
+                async with self._ui_task_lock:
+                    for id_ in ids:
+                        if await self.parameter.recorder.has_id(id_):
+                            continue
+                        filtered_ids.append(id_)
+                ids = filtered_ids
+            if ids:
+                async with self._clipboard_state_lock:
+                    ids = [i for i in ids if i and i not in self._clipboard_inflight_ids]
+                    if ids:
+                        self._clipboard_inflight_ids.update(ids)
+                if ids:
+                    title = _("剪贴板下载链接作品") + " (抖音)"
+                    task = self.ui_tasks.create("download.detail", title)
+                    task.meta["source"] = "clipboard"
+                    task.emit({"type": "meta", **task.meta})
+
+                    async def runner(download_ids: list[str]) -> None:
+                        try:
+                            await self._run_download_detail_ids_task(
+                                task,
+                                tiktok=False,
+                                ids=download_ids,
+                                cookie=None,
+                                proxy=None,
+                            )
+                        finally:
+                            async with self._clipboard_state_lock:
+                                for id_ in download_ids:
+                                    self._clipboard_inflight_ids.discard(id_)
+
+                    self.ui_tasks.run(task, runner(ids))
+
+        if tiktok_urls:
+            ids = await self.links_tiktok.run(" ".join(tiktok_urls), proxy=None)
+            ids = [i for i in ids if i]
+            if recorder_enabled:
+                filtered_ids: list[str] = []
+                async with self._ui_task_lock:
+                    for id_ in ids:
+                        if await self.parameter.recorder.has_id(id_):
+                            continue
+                        filtered_ids.append(id_)
+                ids = filtered_ids
+            if ids:
+                async with self._clipboard_state_lock:
+                    ids = [i for i in ids if i and i not in self._clipboard_inflight_ids]
+                    if ids:
+                        self._clipboard_inflight_ids.update(ids)
+                if ids:
+                    title = _("剪贴板下载链接作品") + " (TikTok)"
+                    task = self.ui_tasks.create("download.detail", title)
+                    task.meta["source"] = "clipboard"
+                    task.emit({"type": "meta", **task.meta})
+
+                    async def runner(download_ids: list[str]) -> None:
+                        try:
+                            await self._run_download_detail_ids_task(
+                                task,
+                                tiktok=True,
+                                ids=download_ids,
+                                cookie=None,
+                                proxy=None,
+                            )
+                        finally:
+                            async with self._clipboard_state_lock:
+                                for id_ in download_ids:
+                                    self._clipboard_inflight_ids.discard(id_)
+
+                    self.ui_tasks.run(task, runner(ids))
 
     def _setup_ui_api_routes(self):
         def _platform_cookie_key(platform: str) -> str:
@@ -479,6 +649,7 @@ class WebUIServer(APIServer):
                 self.parameter,
                 self.database,
                 server_mode=True,
+                on_text=self._handle_clipboard_download_text,
             )
             self._clipboard_monitor = monitor
             self._clipboard_monitor_task = create_task(

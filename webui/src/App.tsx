@@ -46,7 +46,7 @@ export default function App() {
       <TitleBar />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
-        <main className="flex-1 overflow-auto bg-muted/10 p-6 lg:p-8">
+        <main className="app-scroll flex-1 overflow-auto bg-muted/10 px-6 pb-6 pt-1 lg:px-8 lg:pb-8 lg:pt-2">
           <ErrorBoundary>
             <Routes>
               <Route path="/" element={<Navigate to="/download" replace />} />

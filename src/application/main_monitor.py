@@ -1,5 +1,5 @@
 from contextlib import suppress
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Awaitable, Callable
 from asyncio import Event, create_task, gather, sleep, Queue, QueueEmpty
 from .main_terminal import TikTok
 from ..translation import _
@@ -18,6 +18,7 @@ class ClipboardMonitor(TikTok):
         parameter: "Parameter",
         database: "Database",
         server_mode: bool = True,
+        on_text: Callable[[str], Awaitable[None]] | None = None,
     ):
         super().__init__(
             parameter,
@@ -26,6 +27,7 @@ class ClipboardMonitor(TikTok):
         )
         self.event_clipboard = Event()
         self.clipboard_cache = ""
+        self._on_text = on_text
         self.queue_dy = Queue()
         self.queue_tk = Queue()
 
@@ -45,17 +47,23 @@ class ClipboardMonitor(TikTok):
         if reset_clipboard:
             copy("")
         self.event_clipboard.clear()
-        await gather(
+        coros = [
             self.check_clipboard(
                 delay=delay,
-            ),
-            self.deal_tasks(
-                delay=delay,
-            ),
-            self.deal_tasks_tiktok(
-                delay=delay,
-            ),
-        )
+            )
+        ]
+        if self._on_text is None:
+            coros.extend(
+                [
+                    self.deal_tasks(
+                        delay=delay,
+                    ),
+                    self.deal_tasks_tiktok(
+                        delay=delay,
+                    ),
+                ]
+            )
+        await gather(*coros)
 
     async def stop_listener(self):
         self.console.debug("停止监听剪贴板！")
@@ -71,7 +79,10 @@ class ClipboardMonitor(TikTok):
                 await self.stop_listener()
             elif c != self.clipboard_cache:
                 self.clipboard_cache = c
-                create_task(self.check_link(c))
+                if self._on_text is not None:
+                    create_task(self._on_text(c))
+                else:
+                    create_task(self.check_link(c))
             await sleep(delay)
 
     async def check_link(

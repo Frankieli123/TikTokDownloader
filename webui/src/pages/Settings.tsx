@@ -452,8 +452,7 @@ export function SettingsPage() {
           result.logged_in ? "（已检测到登录）" : "（未检测到登录）"
         }`
       )
-    } catch (e) {
-      setError(String(e))
+    } catch {
     } finally {
       setCookieAction(null)
     }

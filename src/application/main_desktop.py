@@ -253,6 +253,12 @@ def run_desktop() -> None:
             thread.join(timeout=3)
         return
 
+    if sys.platform == "win32":
+        try:
+            webview.settings["DRAG_REGION_SELECTOR"] = ".pywebview-drag-region-disabled"
+        except Exception:
+            pass
+
     try:
         webui_css = _read_webui_css()
         log_path_html = _escape_html(str(log_path))
@@ -270,6 +276,58 @@ def run_desktop() -> None:
                 except Exception:
                     pass
 
+            def _native_is_maximized(self) -> bool | None:
+                window = self._window
+                if window is None or sys.platform != "win32":
+                    return None
+                try:
+                    native = getattr(window, "native", None)
+                    if native is None:
+                        return None
+                    state = getattr(native, "WindowState", None)
+                    if state is None:
+                        return None
+                    text = str(state)
+                    if "Maximized" in text:
+                        return True
+                    if "Normal" in text:
+                        return False
+                except Exception:
+                    return None
+                return None
+
+            def begin_drag(self) -> None:
+                window = self._window
+                if window is None or sys.platform != "win32":
+                    return
+                try:
+                    native = getattr(window, "native", None)
+                    if native is None:
+                        return
+                    import ctypes
+
+                    user32 = ctypes.windll.user32
+
+                    def _drag() -> None:
+                        try:
+                            hwnd = int(native.Handle.ToInt32())
+                            user32.ReleaseCapture()
+                            user32.SendMessageW(hwnd, 0xA1, 0x2, 0)
+                        except Exception:
+                            pass
+
+                    try:
+                        if bool(getattr(native, "InvokeRequired", False)):
+                            from System import Action
+
+                            native.Invoke(Action(_drag))
+                        else:
+                            _drag()
+                    except Exception:
+                        _drag()
+                except Exception:
+                    pass
+
             def minimize(self) -> None:
                 window = self._window
                 if window is None:
@@ -279,18 +337,33 @@ def run_desktop() -> None:
                 except Exception:
                     pass
 
-            def toggle_maximize(self) -> None:
+            def toggle_maximize(self) -> bool:
                 window = self._window
                 if window is None:
-                    return
+                    return self.is_maximized()
+
+                before = self.is_maximized()
                 try:
-                    if self._maximized:
+                    if before:
                         window.restore()
                     else:
                         window.maximize()
-                    self._maximized = not self._maximized
                 except Exception:
-                    pass
+                    return self.is_maximized()
+
+                deadline = monotonic() + 0.5
+                while monotonic() < deadline:
+                    now = self.is_maximized()
+                    if now != before:
+                        return now
+                    sleep(0.01)
+                return self.is_maximized()
+
+            def is_maximized(self) -> bool:
+                native = self._native_is_maximized()
+                if native is not None:
+                    self._maximized = native
+                return self._maximized
 
             def close(self) -> None:
                 window = self._window
@@ -316,7 +389,7 @@ def run_desktop() -> None:
   <body>
     <div class="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
       <div class="flex h-7 shrink-0 items-center justify-between bg-background">
-        <div class="pywebview-drag-region h-full flex-1"></div>
+        <div class="pywebview-drag-region h-full flex-1" onmousedown="window.pywebview && window.pywebview.api && window.pywebview.api.begin_drag && window.pywebview.api.begin_drag()"></div>
         <div class="flex h-full items-center">
           <button type="button" class="h-full w-8 hover:bg-muted" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.minimize && window.pywebview.api.minimize()" title="最小化">
             <span class="text-base leading-none">—</span>
@@ -331,14 +404,13 @@ def run_desktop() -> None:
       </div>
       <div class="flex flex-1 overflow-hidden">
         <aside class="flex h-full w-64 flex-col bg-muted/30">
-          <div class="px-6 py-6 text-sm font-bold tracking-tight">{PROJECT_NAME}</div>
-          <nav class="flex-1 space-y-2 px-4">
+          <nav class="flex-1 space-y-2 px-4 pt-6 lg:pt-8">
             <div class="h-10 w-full rounded-md bg-muted/40"></div>
             <div class="h-10 w-full rounded-md bg-muted/30"></div>
             <div class="h-10 w-full rounded-md bg-muted/30"></div>
             <div class="h-10 w-full rounded-md bg-muted/30"></div>
           </nav>
-          <div class="px-6 py-4 text-xs font-medium text-muted-foreground/60">本机 Web UI</div>
+          <div class="px-6 py-4 text-xs font-medium text-muted-foreground/60">禾风起工具箱</div>
         </aside>
         <main class="flex-1 overflow-auto bg-muted/10 p-6">
           <div class="mx-auto max-w-4xl">
@@ -363,12 +435,30 @@ def run_desktop() -> None:
     </div>
   </body>
 </html>"""
+        window_width = 1180
+        window_height = 820
+        window_x = None
+        window_y = None
+        if sys.platform == "win32":
+            try:
+                import ctypes
+
+                user32 = ctypes.windll.user32
+                screen_w = int(user32.GetSystemMetrics(0))
+                screen_h = int(user32.GetSystemMetrics(1))
+                window_x = max(0, (screen_w - window_width) // 2)
+                window_y = max(0, (screen_h - window_height) // 2)
+            except Exception:
+                window_x = None
+                window_y = None
         window = webview.create_window(
             PROJECT_NAME,
             html=loading_html,
             js_api=desktop_api,
-            width=1180,
-            height=820,
+            width=window_width,
+            height=window_height,
+            x=window_x,
+            y=window_y,
             min_size=(980, 640),
             frameless=True,
             easy_drag=False,
@@ -408,7 +498,7 @@ def run_desktop() -> None:
   <body>
     <div class="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
       <div class="flex h-7 shrink-0 items-center justify-between bg-background">
-        <div class="pywebview-drag-region h-full flex-1"></div>
+        <div class="pywebview-drag-region h-full flex-1" onmousedown="window.pywebview && window.pywebview.api && window.pywebview.api.begin_drag && window.pywebview.api.begin_drag()"></div>
         <div class="flex h-full items-center">
           <button type="button" class="h-full w-8 hover:bg-muted" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.minimize && window.pywebview.api.minimize()" title="最小化">
             <span class="text-base leading-none">—</span>
@@ -423,9 +513,8 @@ def run_desktop() -> None:
       </div>
       <div class="flex flex-1 overflow-hidden">
         <aside class="flex h-full w-64 flex-col bg-muted/30">
-          <div class="px-6 py-6 text-sm font-bold tracking-tight">{PROJECT_NAME}</div>
-          <nav class="flex-1 space-y-2 px-4"></nav>
-          <div class="px-6 py-4 text-xs font-medium text-muted-foreground/60">本机 Web UI</div>
+          <nav class="flex-1 space-y-2 px-4 pt-6 lg:pt-8"></nav>
+          <div class="px-6 py-4 text-xs font-medium text-muted-foreground/60">禾风起工具箱</div>
         </aside>
         <main class="flex-1 overflow-auto bg-muted/10 p-6">
           <div class="mx-auto max-w-4xl">

@@ -33,6 +33,9 @@ class Extractor:
     detail_discover = compile(
         r"\S*?https://www\.douyin\.com/discover\S*?modal_id=(\d{19})\S*?"
     )  # 首页作品链接
+    detail_jingxuan = compile(
+        r"\S*?https://www\.douyin\.com/jingxuan\S*?modal_id=(\d{19})\S*?"
+    )  # 精选作品链接
 
     mix_link = compile(
         r"\S*?https://www\.douyin\.com/collection/(\d{19})\S*?"
@@ -149,8 +152,9 @@ class Extractor:
         account = self.extract_info(self.account_link, urls, 2)
         search = self.extract_info(self.detail_search, urls, 1)
         discover = self.extract_info(self.detail_discover, urls, 1)
+        jingxuan = self.extract_info(self.detail_jingxuan, urls, 1)
         channel = self.extract_info(self.channel_link, urls, 1)
-        extracted = link + share + account + search + discover + channel
+        extracted = link + share + account + search + discover + jingxuan + channel
         if allow_id:
             ids = self.extract_info(self.detail_id, urls, 1)
             mix = self.extract_info(self.mix_link, urls, 1)
