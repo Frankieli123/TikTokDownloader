@@ -5,6 +5,8 @@ import { api } from "@/lib/api"
 import type { AppInfo } from "@/types"
 import { ErrorBoundary } from "@/components/ErrorBoundary"
 import { Sidebar } from "@/components/Sidebar"
+import { TitleBar } from "@/components/TitleBar"
+import { ToastHost } from "@/components/ToastHost"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -40,8 +42,9 @@ export default function App() {
   const needDisclaimer = Boolean(appInfo) && !Boolean(appInfo?.disclaimer_accepted)
 
   return (
-    <div className="h-screen w-full bg-gradient-to-br from-gray-50 to-gray-100 p-4 text-foreground dark:from-neutral-900 dark:to-neutral-800">
-      <div className="mx-auto flex h-full w-full max-w-screen-2xl overflow-hidden rounded-2xl bg-background/80 shadow-2xl ring-1 ring-black/5 backdrop-blur-xl dark:bg-background/50 dark:ring-white/10">
+    <div className="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground">
+      <TitleBar />
+      <div className="flex flex-1 overflow-hidden">
         <Sidebar />
         <main className="flex-1 overflow-auto bg-muted/10 p-6 lg:p-8">
           <ErrorBoundary>
@@ -94,6 +97,8 @@ export default function App() {
           </Card>
         </div>
       ) : null}
+
+      <ToastHost />
     </div>
   )
 }

@@ -42,11 +42,12 @@ def run_desktop() -> None:
     import sys
     import traceback
     from datetime import datetime
+    from html import escape as _escape_html
     from pathlib import Path
 
     log_path = (
         Path(os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or Path.home())
-        / "DouK-Downloader"
+        / "HeFengQi-Toolbox"
         / "logs"
         / "desktop.log"
     )
@@ -69,6 +70,37 @@ def run_desktop() -> None:
             except Exception:
                 pass
         print(text)
+
+    def _static_webui_dir() -> Path:
+        base = Path(__file__).resolve().parents[2]
+        if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+            base = Path(sys._MEIPASS)
+        return base.joinpath("static", "webui")
+
+    def _read_webui_css() -> str:
+        try:
+            import re
+
+            webui_dir = _static_webui_dir()
+            index = webui_dir.joinpath("index.html")
+            if not index.is_file():
+                return ""
+
+            html = index.read_text(encoding="utf-8", errors="ignore")
+            hrefs = re.findall(r'href="([^"]+\\.css)"', html)
+            parts: list[str] = []
+            for href in hrefs:
+                rel = href
+                if rel.startswith("/ui/"):
+                    rel = rel[len("/ui/") :]
+                if rel.startswith("/"):
+                    rel = rel[1:]
+                path = webui_dir.joinpath(rel)
+                if path.is_file():
+                    parts.append(path.read_text(encoding="utf-8", errors="ignore"))
+            return "\n".join(parts)
+        except Exception:
+            return ""
 
     port = _pick_port(SERVER_PORT)
     stop_event = Event()
@@ -186,41 +218,21 @@ def run_desktop() -> None:
         return ok
 
     def fallback(reason: str) -> None:
-        is_frozen = bool(getattr(sys, "frozen", False) or getattr(sys, "_MEIPASS", None))
-        if is_frozen:
-            message = (
-                f"{PROJECT_NAME}\n\n"
-                f"桌面窗口启动失败：{reason}\n\n"
-                "请安装/修复 Microsoft Edge WebView2 Runtime 后重试（Windows 11 通常已自带）"
-            )
-            try:
-                if sys.platform == "win32":
-                    import ctypes
-
-                    ctypes.windll.user32.MessageBoxW(0, message, PROJECT_NAME, 0x10)
-                    return
-            except Exception:
-                pass
-            print(message)
-            return
-
-        print(f"[desktop] 已退回浏览器模式：{reason}")
-        print(f"[desktop] 当前解释器：{sys.executable}")
-        print(
-            "[desktop] 若需要桌面窗口：先安装依赖 `uv pip install -r requirements.txt`，再用 `uv run python main.py` 或 `.venv\\Scripts\\python main.py` 启动"
+        message = (
+            f"{PROJECT_NAME}\n\n"
+            f"桌面窗口启动失败：{reason}\n\n"
+            f"日志：{log_path}\n\n"
+            "请安装/修复 Microsoft Edge WebView2 Runtime 后重试（Windows 11 通常已自带）"
         )
-        print(
-            "[desktop] 如仍无法弹窗：安装/修复 Microsoft Edge WebView2 Runtime（Windows 11 通常已自带）"
-        )
-
-        import webbrowser
-
-        webbrowser.open(url)
         try:
-            while thread.is_alive():
-                sleep(0.5)
-        except KeyboardInterrupt:
+            if sys.platform == "win32":
+                import ctypes
+
+                ctypes.windll.user32.MessageBoxW(0, message, PROJECT_NAME, 0x10)
+                return
+        except Exception:
             pass
+        print(message)
 
     try:
         import webview  # pywebview
@@ -242,44 +254,126 @@ def run_desktop() -> None:
         return
 
     try:
+        webui_css = _read_webui_css()
+        log_path_html = _escape_html(str(log_path))
+
+        class _DesktopWindowApi:
+            def __init__(self) -> None:
+                self._window = None
+                self._maximized = False
+
+            def bind(self, window) -> None:
+                self._window = window
+                try:
+                    window.events.maximized += lambda: setattr(self, "_maximized", True)
+                    window.events.restored += lambda: setattr(self, "_maximized", False)
+                except Exception:
+                    pass
+
+            def minimize(self) -> None:
+                window = self._window
+                if window is None:
+                    return
+                try:
+                    window.minimize()
+                except Exception:
+                    pass
+
+            def toggle_maximize(self) -> None:
+                window = self._window
+                if window is None:
+                    return
+                try:
+                    if self._maximized:
+                        window.restore()
+                    else:
+                        window.maximize()
+                    self._maximized = not self._maximized
+                except Exception:
+                    pass
+
+            def close(self) -> None:
+                window = self._window
+                if window is None:
+                    return
+                try:
+                    window.destroy()
+                except Exception:
+                    pass
+
+        desktop_api = _DesktopWindowApi()
         loading_html = f"""<!doctype html>
 <html lang="zh-CN">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>{PROJECT_NAME}</title>
-  <style>
-    html, body {{ height: 100%; margin: 0; background: #0f111a; color: #e6e8ef; font-family: -apple-system, Segoe UI, Microsoft YaHei, Arial, sans-serif; }}
-    .wrap {{ height: 100%; display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box; }}
-    .card {{ max-width: 720px; width: 100%; background: #15182a; border: 1px solid #232847; border-radius: 12px; padding: 22px 22px 18px; box-sizing: border-box; }}
-    .row {{ display: flex; align-items: center; gap: 12px; }}
-    .dot {{ width: 10px; height: 10px; border-radius: 50%; background: #3b82f6; box-shadow: 0 0 0 0 rgba(59,130,246,.6); animation: pulse 1.2s infinite; }}
-    @keyframes pulse {{ 0% {{ box-shadow: 0 0 0 0 rgba(59,130,246,.6); }} 70% {{ box-shadow: 0 0 0 10px rgba(59,130,246,0); }} 100% {{ box-shadow: 0 0 0 0 rgba(59,130,246,0); }} }}
-    h1 {{ font-size: 18px; margin: 0; }}
-    p {{ margin: 10px 0 0; color: #b6bdd6; line-height: 1.6; }}
-    code {{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: #cbd5e1; }}
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <div class="card">
-      <div class="row">
-        <div class="dot"></div>
-        <h1>正在启动…</h1>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{PROJECT_NAME}</title>
+    <style>
+      {webui_css}
+      html, body {{ height: 100%; margin: 0; }}
+    </style>
+  </head>
+  <body>
+    <div class="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
+      <div class="flex h-7 shrink-0 items-center justify-between bg-background">
+        <div class="pywebview-drag-region h-full flex-1"></div>
+        <div class="flex h-full items-center">
+          <button type="button" class="h-full w-8 hover:bg-muted" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.minimize && window.pywebview.api.minimize()" title="最小化">
+            <span class="text-base leading-none">—</span>
+          </button>
+          <button type="button" class="h-full w-8 hover:bg-muted" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.toggle_maximize && window.pywebview.api.toggle_maximize()" title="最大化/还原">
+            <span class="text-sm leading-none">□</span>
+          </button>
+          <button type="button" class="h-full w-8 hover:bg-destructive hover:text-destructive-foreground" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.close && window.pywebview.api.close()" title="关闭">
+            <span class="text-lg leading-none">×</span>
+          </button>
+        </div>
       </div>
-      <p>正在启动后台服务并加载界面。首次启动/系统较慢/杀毒扫描时可能会多等一会儿。</p>
-      <p>如果长时间没有进入主界面，请稍后查看日志：<br><code>{log_path}</code></p>
+      <div class="flex flex-1 overflow-hidden">
+        <aside class="flex h-full w-64 flex-col bg-muted/30">
+          <div class="px-6 py-6 text-sm font-bold tracking-tight">{PROJECT_NAME}</div>
+          <nav class="flex-1 space-y-2 px-4">
+            <div class="h-10 w-full rounded-md bg-muted/40"></div>
+            <div class="h-10 w-full rounded-md bg-muted/30"></div>
+            <div class="h-10 w-full rounded-md bg-muted/30"></div>
+            <div class="h-10 w-full rounded-md bg-muted/30"></div>
+          </nav>
+          <div class="px-6 py-4 text-xs font-medium text-muted-foreground/60">本机 Web UI</div>
+        </aside>
+        <main class="flex-1 overflow-auto bg-muted/10 p-6">
+          <div class="mx-auto max-w-4xl">
+            <div class="rounded-lg border bg-card text-card-foreground shadow-sm p-6">
+              <div class="flex items-center gap-3">
+                <svg class="h-5 w-5 animate-spin text-muted-foreground" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" opacity="0.25"></circle>
+                  <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" stroke-width="4" stroke-linecap="round"></path>
+                </svg>
+                <div class="text-sm font-medium">正在启动…</div>
+              </div>
+              <div class="mt-2 text-xs text-muted-foreground">
+                正在启动后台服务并加载界面。首次启动/系统较慢/杀毒扫描时可能会多等一会儿。
+              </div>
+              <div class="mt-3 text-xs text-muted-foreground">
+                日志：<span class="font-mono">{log_path_html}</span>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
     </div>
-  </div>
-</body>
+  </body>
 </html>"""
         window = webview.create_window(
-            f"{PROJECT_NAME} (127.0.0.1:{port})",
+            PROJECT_NAME,
             html=loading_html,
+            js_api=desktop_api,
             width=1180,
             height=820,
             min_size=(980, 640),
+            frameless=True,
+            easy_drag=False,
         )
+        desktop_api.bind(window)
         window.events.closing += lambda: stop_event.set()
 
         def bootstrap():
@@ -300,17 +394,56 @@ def run_desktop() -> None:
                     reason = backend_errors[-1].strip().splitlines()[-1]
                 _log(f"desktop startup failed: {reason}")
                 window.load_html(
-                    f"""<!doctype html><html lang=zh-CN><meta charset=utf-8><title>{PROJECT_NAME}</title>
-<body style='margin:0;background:#0f111a;color:#e6e8ef;font-family:-apple-system,Segoe UI,Microsoft YaHei,Arial,sans-serif;'>
-<div style='padding:24px;max-width:920px;box-sizing:border-box;'>
-  <h1 style='font-size:18px;margin:0 0 10px;'>启动失败</h1>
-  <div style='color:#b6bdd6;line-height:1.7;'>
-    <div>无法启动后台服务：<span style='color:#e6e8ef;'>{reason}</span></div>
-    <div style='margin-top:10px;'>请查看日志：</div>
-    <pre style='white-space:pre-wrap;background:#15182a;border:1px solid #232847;border-radius:10px;padding:12px;margin:10px 0 0;color:#cbd5e1;'>{log_path}</pre>
-  </div>
-</div>
-</body></html>"""
+                    f"""<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{PROJECT_NAME}</title>
+    <style>
+      {webui_css}
+      html, body {{ height: 100%; margin: 0; }}
+    </style>
+  </head>
+  <body>
+    <div class="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
+      <div class="flex h-7 shrink-0 items-center justify-between bg-background">
+        <div class="pywebview-drag-region h-full flex-1"></div>
+        <div class="flex h-full items-center">
+          <button type="button" class="h-full w-8 hover:bg-muted" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.minimize && window.pywebview.api.minimize()" title="最小化">
+            <span class="text-base leading-none">—</span>
+          </button>
+          <button type="button" class="h-full w-8 hover:bg-muted" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.toggle_maximize && window.pywebview.api.toggle_maximize()" title="最大化/还原">
+            <span class="text-sm leading-none">□</span>
+          </button>
+          <button type="button" class="h-full w-8 hover:bg-destructive hover:text-destructive-foreground" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.close && window.pywebview.api.close()" title="关闭">
+            <span class="text-lg leading-none">×</span>
+          </button>
+        </div>
+      </div>
+      <div class="flex flex-1 overflow-hidden">
+        <aside class="flex h-full w-64 flex-col bg-muted/30">
+          <div class="px-6 py-6 text-sm font-bold tracking-tight">{PROJECT_NAME}</div>
+          <nav class="flex-1 space-y-2 px-4"></nav>
+          <div class="px-6 py-4 text-xs font-medium text-muted-foreground/60">本机 Web UI</div>
+        </aside>
+        <main class="flex-1 overflow-auto bg-muted/10 p-6">
+          <div class="mx-auto max-w-4xl">
+            <div class="rounded-lg border bg-card text-card-foreground shadow-sm p-6">
+              <div class="text-sm font-semibold">启动失败</div>
+              <div class="mt-2 text-xs text-muted-foreground">
+                无法启动后台服务：<span class="font-mono text-foreground">{_escape_html(reason)}</span>
+              </div>
+              <div class="mt-3 text-xs text-muted-foreground">
+                日志：<span class="font-mono">{log_path_html}</span>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+  </body>
+</html>"""
                 )
                 stop_event.set()
             except Exception:

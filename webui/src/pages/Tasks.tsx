@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 
 import { api } from "@/lib/api"
+import { notify } from "@/lib/notify"
 import type { UITask } from "@/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -155,11 +156,14 @@ export function TasksPage() {
         setLogs((prev) => [...prev.slice(-999), data])
       } catch (e) {
         setError(String(e))
+        notify.error("Error parsing task event: " + String(e))
       }
     }
 
     es.onerror = () => {
-      setError("EventSource disconnected")
+      const msg = "EventSource disconnected"
+      setError(msg)
+      notify.error(msg)
     }
 
     return () => {

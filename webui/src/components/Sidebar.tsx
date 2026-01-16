@@ -14,8 +14,8 @@ export function Sidebar() {
 
   return (
     <aside className="flex h-full w-64 flex-col bg-muted/30">
-      <div className="px-6 py-6 text-sm font-bold tracking-tight">
-        DouK-Downloader
+      <div className="px-6 py-1.5 text-sm font-bold tracking-tight">
+        禾风起工具箱
       </div>
       <nav className="flex-1 space-y-1 px-4">
         {items.map((item) => (

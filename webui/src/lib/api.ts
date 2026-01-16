@@ -1,10 +1,24 @@
 import type { AppInfo, SettingsData, UIConfig, UITask, UpdateInfo } from "@/types"
+import { notify } from "@/lib/notify"
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init)
+  let response: Response
+  try {
+    response = await fetch(url, init)
+  } catch (e) {
+    notify.error(String(e))
+    throw e
+  }
+
   if (!response.ok) {
-    const text = await response.text().catch(() => "")
-    throw new Error(`${response.status} ${response.statusText} ${text}`.trim())
+    let text = await response.text().catch(() => "")
+    try {
+      const json = JSON.parse(text)
+      if (typeof json.detail === "string") text = json.detail
+    } catch {}
+    const msg = text ? text : `${response.status} ${response.statusText}`
+    notify.error(msg)
+    throw new Error(msg)
   }
   return (await response.json()) as T
 }

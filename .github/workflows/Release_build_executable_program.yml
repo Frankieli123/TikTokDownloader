@@ -16,6 +16,22 @@ jobs:
     steps:
       - name: 签出存储库
         uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+
+      - name: 构建 WebUI
+        run: |
+          cd webui
+          npm ci
+          npm run build
+        shell: bash
 
       - name: 设置 Python
         uses: actions/setup-python@v5
@@ -30,20 +46,20 @@ jobs:
 
       - name: 构建 Win 可执行文件
         run: |
-          pyinstaller --noconsole --uac-admin --icon=./static/images/DouK-Downloader.ico --add-data "static:static" --add-data "locale:locale" --collect-all emoji main.py
+          pyinstaller --noconsole --name "禾风起工具箱" --icon=./static/images/DouK-Downloader.ico --add-data "static;static" --add-data "locale;locale" --collect-all emoji main.py
         shell: pwsh
 
       - name: 创建压缩包
         run: |
-          7z a "DouK-Downloader_V${{ github.event.release.tag_name }}_${{ runner.os }}_${{ runner.arch }}.zip" ./dist/main/*
-        shell: bash
+          7z a "禾风起工具箱_V${{ github.event.release.tag_name }}_${{ runner.os }}_${{ runner.arch }}.zip" ./dist/禾风起工具箱/*
+        shell: pwsh
 
       - name: 上传文件到 release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            ./DouK-Downloader_V*.zip
-          name: DouK-Downloader V${{ github.event.release.tag_name }}
+            ./禾风起工具箱_V*.zip
+          name: 禾风起工具箱 V${{ github.event.release.tag_name }}
           body_path: ./docs/Release_Notes.md
           draft: ${{ github.event.release.draft }}
           prerelease: ${{ github.event.release.prerelease }}

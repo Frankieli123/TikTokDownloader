@@ -10,6 +10,7 @@ from uvicorn import Config, Server
 
 from ..custom import (
     __VERSION__,
+    PROJECT_NAME,
     REPOSITORY,
     SERVER_HOST,
     SERVER_PORT,
@@ -93,7 +94,7 @@ class APIServer(TikTok):
 
         self.server = FastAPI(
             debug=VERSION_BETA,
-            title="DouK-Downloader",
+            title=PROJECT_NAME,
             version=__VERSION__,
         )
         self.setup_routes()
