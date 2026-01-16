@@ -65,3 +65,14 @@ async def suspend(count: int, console: "ColorfulConsole") -> None:
 def is_valid_token(token: str) -> bool:
     """Web API 接口模式 和 Web UI 交互模式 token 参数验证"""
     return True
+
+
+def parse_release_version(tag: str) -> tuple[int, int]:
+    tag = (tag or "").strip()
+    if tag.startswith(("v", "V")):
+        tag = tag[1:]
+    tag = tag.split("-", 1)[0].split("_", 1)[0]
+    parts = tag.split(".")
+    if len(parts) < 2:
+        raise ValueError(f"invalid release tag: {tag!r}")
+    return int(parts[0]), int(parts[1])

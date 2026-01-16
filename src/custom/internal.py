@@ -8,10 +8,10 @@ VERSION_BETA = True
 __VERSION__ = f"{VERSION_MAJOR}.{VERSION_MINOR}.{'beta' if VERSION_BETA else 'stable'}"
 PROJECT_NAME = "禾风起工具箱"
 
-REPOSITORY = "https://github.com/JoeanAmier/TikTokDownloader"
+REPOSITORY = "https://github.com/Frankieli123/TikTokDownloader"
 LICENCE = "GNU General Public License v3.0"
-DOCUMENTATION_URL = "https://github.com/JoeanAmier/TikTokDownloader/wiki/Documentation"
-RELEASES = "https://github.com/JoeanAmier/TikTokDownloader/releases/latest"
+DOCUMENTATION_URL = "https://github.com/Frankieli123/TikTokDownloader/wiki/Documentation"
+RELEASES = "https://github.com/Frankieli123/TikTokDownloader/releases/latest"
 
 DISCLAIMER_TEXT = (
     "关于 DouK-Downloader 的 免责声明：\n"

@@ -21,6 +21,7 @@ from src.custom import (
     VERSION_BETA,
     VERSION_MAJOR,
     VERSION_MINOR,
+    parse_release_version,
 )
 from src.manager import Database, DownloadRecorder
 from src.module import Cookie, MigrateFolder
@@ -257,9 +258,13 @@ class TikTokDownloader:
                 timeout=5,
                 follow_redirects=True,
             )
-            latest_major, latest_minor = map(
-                int, str(response.url).split("/")[-1].split(".", 1)
-            )
+            latest_tag = str(response.url).rstrip("/").split("/")[-1]
+            try:
+                latest_major, latest_minor = parse_release_version(latest_tag)
+            except Exception:
+                self.console.warning(_("未找到最新发布版本"))
+                self.console.print(RELEASES)
+                return
             if latest_major > self.VERSION_MAJOR or latest_minor > self.VERSION_MINOR:
                 self.console.warning(
                     _("检测到新版本: {major}.{minor}").format(

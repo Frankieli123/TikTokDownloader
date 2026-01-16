@@ -91,7 +91,7 @@ export function TitleBar() {
           onClick={() => api.minimize?.()}
           title="最小化"
         >
-          <Minus className="h-4 w-4" />
+          <Minus className="!h-3 !w-3" />
         </Button>
         <Button
           type="button"
@@ -111,7 +111,7 @@ export function TitleBar() {
           onClick={() => api.close?.()}
           title="关闭"
         >
-          <X className="h-4 w-4" />
+          <X className="!h-3 !w-3" />
         </Button>
       </div>
     </div>

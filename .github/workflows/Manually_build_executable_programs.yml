@@ -2,7 +2,7 @@ name: 构建可执行文件
 
 on:
   push:
-    branches: [ master, develop ]
+    branches: [ master, main, develop ]
   workflow_dispatch:
 
 jobs:
@@ -24,8 +24,8 @@ jobs:
           cache-dependency-path: webui/package-lock.json
 
       - name: 构建 WebUI
+        working-directory: webui
         run: |
-          cd webui
           npm ci
           npm run build
 
@@ -51,6 +51,7 @@ jobs:
         with:
           name: 禾风起工具箱_Windows_${{ runner.arch }}_${{ env.DATE }}
           path: dist/禾风起工具箱/
+          if-no-files-found: error
 
   build_matrix_manual:
     name: 构建 (手动 / ${{ matrix.os }})
@@ -64,10 +65,6 @@ jobs:
           - os: windows-latest
             optional: false
           - os: windows-11-arm
-            optional: true
-          - os: macos-latest
-            optional: true
-          - os: macos-15-intel
             optional: true
 
     steps:
@@ -84,8 +81,8 @@ jobs:
           cache-dependency-path: webui/package-lock.json
 
       - name: 构建 WebUI
+        working-directory: webui
         run: |
-          cd webui
           npm ci
           npm run build
 
@@ -101,20 +98,14 @@ jobs:
           pip install pyinstaller
 
       - name: 构建 Win 可执行文件
-        if: runner.os == 'Windows'
         run: |
           echo "DATE=$(Get-Date -Format 'yyyyMMdd')" >> $env:GITHUB_ENV
           pyinstaller --noconsole --name "禾风起工具箱" --icon=./static/images/DouK-Downloader.ico --add-data "static;static" --add-data "locale;locale" --collect-all emoji main.py
         shell: pwsh
-
-      - name: 构建 Mac 可执行文件
-        if: runner.os == 'macOS'
-        run: |
-          echo "DATE=$(date +'%Y%m%d')" >> $GITHUB_ENV
-          pyinstaller --name "禾风起工具箱" --icon=./static/images/DouK-Downloader.icns --add-data "static:static" --add-data "locale:locale" --collect-all emoji main.py
 
       - name: 上传文件
         uses: actions/upload-artifact@v4
         with:
           name: 禾风起工具箱_${{ runner.os }}_${{ runner.arch }}_${{ env.DATE }}
           path: dist/禾风起工具箱/
+          if-no-files-found: error

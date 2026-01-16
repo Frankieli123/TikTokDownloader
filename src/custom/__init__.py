@@ -4,6 +4,7 @@ from .function import (
     condition_filter,
     suspend,
     is_valid_token,
+    parse_release_version,
 )
 from .internal import (
     DISCLAIMER_TEXT,

@@ -24,6 +24,7 @@ from ..custom import (
     VERSION_BETA,
     VERSION_MAJOR,
     VERSION_MINOR,
+    parse_release_version,
     __VERSION__,
 )
 from ..interface import API, Collection, Collects, CollectsMix, CollectsMusic
@@ -603,16 +604,17 @@ class WebUIServer(APIServer):
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"check update failed: {e!r}") from None
 
+            latest_tag = str(response.url).rstrip("/").split("/")[-1]
             try:
-                latest_major, latest_minor = map(
-                    int, str(response.url).split("/")[-1].split(".", 1)
-                )
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"parse update version failed: {e!r}") from None
-
-            update_available = latest_major > VERSION_MAJOR or latest_minor > VERSION_MINOR
-            if not update_available and VERSION_BETA and latest_minor == VERSION_MINOR:
-                update_available = True
+                latest_major, latest_minor = parse_release_version(latest_tag)
+                latest_version = f"{latest_major}.{latest_minor}"
+                update_available = latest_major > VERSION_MAJOR or latest_minor > VERSION_MINOR
+                if not update_available and VERSION_BETA and latest_minor == VERSION_MINOR:
+                    update_available = True
+            except Exception:
+                latest_major, latest_minor = VERSION_MAJOR, VERSION_MINOR
+                latest_version = __VERSION__
+                update_available = False
 
             return {
                 "current_version": __VERSION__,
@@ -621,7 +623,7 @@ class WebUIServer(APIServer):
                 "current_beta": bool(VERSION_BETA),
                 "latest_major": latest_major,
                 "latest_minor": latest_minor,
-                "latest_version": f"{latest_major}.{latest_minor}",
+                "latest_version": latest_version,
                 "update_available": bool(update_available),
                 "releases_url": RELEASES,
             }

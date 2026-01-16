@@ -1,42 +1,55 @@
 name: 自动构建并发布可执行文件
 
 on:
-  release:
-    types: [ published ]
+  push:
+    tags:
+      - "*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        type: string
+        required: true
+        description: "Release tag (e.g. 5.8.0)"
 
 permissions:
   contents: write
-  discussions: write
+
+env:
+  APP_NAME: 禾风起工具箱
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "20"
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
 
 jobs:
   build:
-    name: 构建于 Windows
+    name: 发布 (Windows)
     runs-on: windows-latest
 
     steps:
       - name: 签出存储库
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref }}
           submodules: false
+          fetch-depth: 0
 
       - name: 设置 Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: webui/package-lock.json
 
       - name: 构建 WebUI
+        working-directory: webui
         run: |
-          cd webui
           npm ci
           npm run build
-        shell: bash
 
       - name: 设置 Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: 安装依赖项
         run: |
@@ -45,21 +58,23 @@ jobs:
           pip install pyinstaller
 
       - name: 构建 Win 可执行文件
-        run: |
-          pyinstaller --noconsole --name "禾风起工具箱" --icon=./static/images/DouK-Downloader.ico --add-data "static;static" --add-data "locale;locale" --collect-all emoji main.py
         shell: pwsh
+        run: |
+          pyinstaller --noconsole --name "$env:APP_NAME" --icon=./static/images/DouK-Downloader.ico --add-data "static;static" --add-data "locale;locale" --collect-all emoji main.py
 
       - name: 创建压缩包
-        run: |
-          7z a "禾风起工具箱_V${{ github.event.release.tag_name }}_${{ runner.os }}_${{ runner.arch }}.zip" ./dist/禾风起工具箱/*
         shell: pwsh
+        run: |
+          $zip = "${env:APP_NAME}_V${env:RELEASE_TAG}_${{ runner.os }}_${{ runner.arch }}.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path ("dist\\{0}\\*" -f $env:APP_NAME) -DestinationPath $zip
+          echo "ZIP_NAME=$zip" >> $env:GITHUB_ENV
 
-      - name: 上传文件到 release
+      - name: 发布到 GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            ./禾风起工具箱_V*.zip
-          name: 禾风起工具箱 V${{ github.event.release.tag_name }}
-          body_path: ./docs/Release_Notes.md
-          draft: ${{ github.event.release.draft }}
-          prerelease: ${{ github.event.release.prerelease }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: ${{ env.ZIP_NAME }}
+          name: ${{ env.APP_NAME }} V${{ env.RELEASE_TAG }}
+          generate_release_notes: true
+          prerelease: ${{ contains(env.RELEASE_TAG, 'beta') || contains(env.RELEASE_TAG, 'dev') }}
