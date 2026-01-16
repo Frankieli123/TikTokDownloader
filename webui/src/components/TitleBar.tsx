@@ -101,7 +101,7 @@ export function TitleBar() {
           onClick={handleToggleMaximize}
           title={maximized ? "还原" : "最大化"}
         >
-          {maximized ? <Copy className="h-1.5 w-1.5" /> : <Square className="h-1.5 w-1.5" />}
+          {maximized ? <Copy className="!h-3 !w-3" /> : <Square className="!h-3 !w-3" />}
         </Button>
         <Button
           type="button"

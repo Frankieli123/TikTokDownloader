@@ -391,14 +391,14 @@ def run_desktop() -> None:
       <div class="flex h-7 shrink-0 items-center justify-between bg-background">
         <div class="pywebview-drag-region h-full flex-1" onmousedown="window.pywebview && window.pywebview.api && window.pywebview.api.begin_drag && window.pywebview.api.begin_drag()"></div>
         <div class="flex h-full items-center">
-          <button type="button" class="h-full w-8 hover:bg-muted" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.minimize && window.pywebview.api.minimize()" title="最小化">
-            <span class="text-base leading-none">—</span>
+          <button type="button" class="h-full w-7 hover:bg-muted" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.minimize && window.pywebview.api.minimize()" title="最小化">
+            <span class="text-sm leading-none">—</span>
           </button>
-          <button type="button" class="h-full w-8 hover:bg-muted" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.toggle_maximize && window.pywebview.api.toggle_maximize()" title="最大化/还原">
-            <span class="text-sm leading-none">□</span>
+          <button type="button" class="h-full w-7 hover:bg-muted" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.toggle_maximize && window.pywebview.api.toggle_maximize()" title="最大化/还原">
+            <span class="text-xs leading-none">□</span>
           </button>
-          <button type="button" class="h-full w-8 hover:bg-destructive hover:text-destructive-foreground" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.close && window.pywebview.api.close()" title="关闭">
-            <span class="text-lg leading-none">×</span>
+          <button type="button" class="h-full w-7 hover:bg-destructive hover:text-destructive-foreground" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.close && window.pywebview.api.close()" title="关闭">
+            <span class="text-sm leading-none">×</span>
           </button>
         </div>
       </div>
@@ -500,14 +500,14 @@ def run_desktop() -> None:
       <div class="flex h-7 shrink-0 items-center justify-between bg-background">
         <div class="pywebview-drag-region h-full flex-1" onmousedown="window.pywebview && window.pywebview.api && window.pywebview.api.begin_drag && window.pywebview.api.begin_drag()"></div>
         <div class="flex h-full items-center">
-          <button type="button" class="h-full w-8 hover:bg-muted" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.minimize && window.pywebview.api.minimize()" title="最小化">
-            <span class="text-base leading-none">—</span>
+          <button type="button" class="h-full w-7 hover:bg-muted" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.minimize && window.pywebview.api.minimize()" title="最小化">
+            <span class="text-sm leading-none">—</span>
           </button>
-          <button type="button" class="h-full w-8 hover:bg-muted" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.toggle_maximize && window.pywebview.api.toggle_maximize()" title="最大化/还原">
-            <span class="text-sm leading-none">□</span>
+          <button type="button" class="h-full w-7 hover:bg-muted" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.toggle_maximize && window.pywebview.api.toggle_maximize()" title="最大化/还原">
+            <span class="text-xs leading-none">□</span>
           </button>
-          <button type="button" class="h-full w-8 hover:bg-destructive hover:text-destructive-foreground" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.close && window.pywebview.api.close()" title="关闭">
-            <span class="text-lg leading-none">×</span>
+          <button type="button" class="h-full w-7 hover:bg-destructive hover:text-destructive-foreground" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.close && window.pywebview.api.close()" title="关闭">
+            <span class="text-sm leading-none">×</span>
           </button>
         </div>
       </div>

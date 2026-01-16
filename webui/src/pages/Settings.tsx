@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 
 import { api } from "@/lib/api"
+import { notify } from "@/lib/notify"
 import type {
   AccountTab,
   AccountUrlItem,
@@ -511,14 +512,14 @@ export function SettingsPage() {
     const previous = clipboardRunning
     setClipboardRunning(enable)
     setClipboardLoading(true)
+    setMessage(null)
     setError(null)
     try {
       const res = enable ? await api.startClipboardMonitor() : await api.stopClipboardMonitor()
       setClipboardRunning(Boolean(res.running))
-      setMessage(enable ? "已开启剪贴板监听下载" : "已关闭剪贴板监听下载")
-    } catch (e) {
+      notify.success(enable ? "已开启剪贴板监听下载" : "已关闭剪贴板监听下载")
+    } catch {
       setClipboardRunning(previous)
-      setError(String(e))
     } finally {
       setClipboardLoading(false)
     }

@@ -37,6 +37,38 @@ function statusVariant(status: string) {
   return "outline"
 }
 
+const STATUS_LABELS: Record<string, string> = {
+  queued: "排队中",
+  running: "进行中",
+  success: "已完成",
+  error: "失败",
+  cancelled: "已取消",
+}
+
+const TYPE_LABELS: Record<string, string> = {
+  "download.detail": "下载作品",
+  "download.account": "批量下载账号作品",
+  "download.mix": "批量下载合集作品",
+  "download.collection": "批量下载收藏作品",
+  "download.collects": "批量下载收藏夹作品",
+  "download.collection_music": "批量下载收藏音乐",
+  "download.mix_collection": "批量下载收藏合集作品",
+  "download.tiktok_original": "批量下载视频原画",
+  "collect.live": "获取直播拉流地址",
+  "collect.comment": "采集作品评论数据",
+  "collect.user": "采集账号详细数据",
+  "collect.hot": "采集抖音热榜数据",
+  "collect.search": "采集搜索结果数据",
+}
+
+function statusLabel(status: string) {
+  return STATUS_LABELS[status] || status
+}
+
+function typeLabel(type: string) {
+  return TYPE_LABELS[type] || type
+}
+
 export function TasksPage() {
   const [searchParams] = useSearchParams()
   const initialTaskId = searchParams.get("task")
@@ -191,8 +223,8 @@ export function TasksPage() {
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="truncate text-sm font-medium">{task.title}</div>
-                    <Badge variant={statusVariant(task.status)} className="shrink-0">
-                      {task.status}
+                    <Badge variant={statusVariant(task.status)} className="shrink-0" title={task.status}>
+                      {statusLabel(task.status)}
                     </Badge>
                   </div>
                   <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
@@ -238,8 +270,12 @@ export function TasksPage() {
           {selectedTask ? (
             <div className="space-y-1 text-sm">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">{selectedTask.type}</Badge>
-                <Badge variant={statusVariant(selectedTask.status)}>{selectedTask.status}</Badge>
+                <Badge variant="outline" title={selectedTask.type}>
+                  {typeLabel(selectedTask.type)}
+                </Badge>
+                <Badge variant={statusVariant(selectedTask.status)} title={selectedTask.status}>
+                  {statusLabel(selectedTask.status)}
+                </Badge>
               </div>
               <div className="text-muted-foreground">
                 开始: {formatTime(selectedTask.started_at)}{" "}
