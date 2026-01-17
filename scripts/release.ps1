@@ -5,6 +5,9 @@ param(
   [string]$Remote = "origin",
   [string]$Branch,
 
+  [bool]$AutoCommit = $true,
+  [string]$CommitMessage,
+
   [switch]$AllowDirty,
   [switch]$NoPushBranch,
   [switch]$NoPushTag,
@@ -77,8 +80,25 @@ while ($true) {
 }
 
 $dirty = ExecGit @("status", "--porcelain")
-if ($dirty -and -not $AllowDirty) {
-  throw "Working tree is dirty. Commit changes first (or pass -AllowDirty)."
+if ($dirty) {
+  if ($AllowDirty) {
+    Write-Host "Working tree is dirty (continuing because -AllowDirty was set)."
+  } elseif ($AutoCommit) {
+    $msg = $CommitMessage
+    if (-not $msg) { $msg = "Release $Tag" }
+    Write-Host "Working tree is dirty. Auto-committing changes: $msg"
+    ExecGit @("add", "-A") | Out-Null
+    $staged = ExecGit @("diff", "--cached", "--name-only")
+    if ($staged) {
+      ExecGit @("commit", "-m", $msg) | Out-Null
+    }
+    $dirtyAfter = ExecGit @("status", "--porcelain")
+    if ($dirtyAfter) {
+      throw "Working tree is still dirty after auto-commit. Commit changes first (or pass -AllowDirty)."
+    }
+  } else {
+    throw "Working tree is dirty. Commit changes first (or pass -AllowDirty)."
+  }
 }
 
 $existsLocal = ExecGit @("tag", "--list", $Tag)
@@ -116,8 +136,12 @@ if (-not $NoPushTag) {
 $remoteUrl = ExecGit @("remote", "get-url", $Remote)
 $releaseUrl = GetReleaseUrl $remoteUrl $Tag
 
-Write-Host "Tag pushed: $Tag"
-if ($releaseUrl) {
-  Write-Host "Release page: $releaseUrl"
+if ($NoPushTag) {
+  Write-Host "Tag created locally: $Tag"
+} else {
+  Write-Host "Tag pushed: $Tag"
+  if ($releaseUrl) {
+    Write-Host "Release page: $releaseUrl"
+  }
+  Write-Host "GitHub Actions should start building and publishing automatically."
 }
-Write-Host "GitHub Actions should start building and publishing automatically."

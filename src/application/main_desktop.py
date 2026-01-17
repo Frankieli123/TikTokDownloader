@@ -382,57 +382,88 @@ def run_desktop() -> None:
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{PROJECT_NAME}</title>
     <style>
-      {webui_css}
       html, body {{ height: 100%; margin: 0; }}
+      body {{
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji",
+          "Segoe UI Emoji";
+        background: #ffffff;
+        color: #0f172a;
+        overflow: hidden;
+      }}
+      .titlebar {{
+        position: fixed;
+        inset: 0 0 auto 0;
+        height: 28px;
+        display: flex;
+        align-items: stretch;
+      }}
+      .drag {{ flex: 1; }}
+      .controls {{ display: flex; }}
+      .btn {{
+        width: 28px;
+        height: 28px;
+        border: 0;
+        background: transparent;
+        color: #334155;
+        font-size: 12px;
+        line-height: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        user-select: none;
+      }}
+      .btn:hover {{ background: #f1f5f9; }}
+      .btn.close:hover {{ background: #ef4444; color: #ffffff; }}
+      .center {{
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding-top: 28px;
+        box-sizing: border-box;
+      }}
       @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
-      .animate-spin {{ animation: spin 1s linear infinite; }}
+      .loading {{
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }}
+      .spinner {{
+        width: 16px;
+        height: 16px;
+        border-radius: 9999px;
+        border: 2px solid #e2e8f0;
+        border-top-color: #64748b;
+        animation: spin 0.9s linear infinite;
+      }}
+      .text {{
+        font-size: 14px;
+        font-weight: 500;
+        color: #475569;
+        user-select: none;
+      }}
     </style>
   </head>
   <body>
-    <div class="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
-      <div class="flex h-7 shrink-0 items-center justify-between bg-background">
-        <div class="pywebview-drag-region h-full flex-1" onmousedown="window.pywebview && window.pywebview.api && window.pywebview.api.begin_drag && window.pywebview.api.begin_drag()"></div>
-        <div class="flex h-full items-center">
-          <button type="button" class="h-full w-7 hover:bg-muted" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.minimize && window.pywebview.api.minimize()" title="最小化">
-            <span class="text-sm leading-none">—</span>
-          </button>
-          <button type="button" class="h-full w-7 hover:bg-muted" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.toggle_maximize && window.pywebview.api.toggle_maximize()" title="最大化/还原">
-            <span class="text-xs leading-none">□</span>
-          </button>
-          <button type="button" class="h-full w-7 hover:bg-destructive hover:text-destructive-foreground" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.close && window.pywebview.api.close()" title="关闭">
-            <span class="text-sm leading-none">×</span>
-          </button>
-        </div>
+    <div class="titlebar">
+      <div class="drag" onmousedown="window.pywebview && window.pywebview.api && window.pywebview.api.begin_drag && window.pywebview.api.begin_drag()"></div>
+      <div class="controls">
+        <button type="button" class="btn" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.minimize && window.pywebview.api.minimize()" title="最小化">
+          —
+        </button>
+        <button type="button" class="btn" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.toggle_maximize && window.pywebview.api.toggle_maximize()" title="最大化/还原">
+          □
+        </button>
+        <button type="button" class="btn close" onclick="window.pywebview && window.pywebview.api && window.pywebview.api.close && window.pywebview.api.close()" title="关闭">
+          ×
+        </button>
       </div>
-      <div class="flex flex-1 overflow-hidden">
-        <aside class="flex h-full w-64 flex-col bg-muted/30">
-          <nav class="flex-1 space-y-2 px-4 pt-6 lg:pt-8">
-            <div class="h-10 w-full rounded-md bg-muted/40"></div>
-            <div class="h-10 w-full rounded-md bg-muted/30"></div>
-            <div class="h-10 w-full rounded-md bg-muted/30"></div>
-            <div class="h-10 w-full rounded-md bg-muted/30"></div>
-          </nav>
-          <div class="px-6 py-4 text-xs font-medium text-muted-foreground/60">禾风起工具箱</div>
-        </aside>
-        <main class="flex-1 overflow-auto bg-muted/10 p-6">
-          <div class="mx-auto max-w-4xl">
-            <div class="rounded-lg border bg-card text-card-foreground shadow-sm p-6">
-              <div class="flex items-center gap-3">
-                <svg width="16" height="16" class="h-4 w-4 animate-spin text-muted-foreground" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" opacity="0.25"></circle>
-                  <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" stroke-width="4" stroke-linecap="round"></path>
-                </svg>
-                <div class="text-sm font-medium">正在启动…</div>
-              </div>
-              <div class="mt-2 text-xs text-muted-foreground">
-                正在启动后台服务并加载界面。首次启动/系统较慢/杀毒扫描时可能会多等一会儿。
-              </div>
-              <div class="mt-3 text-xs text-muted-foreground">
-                日志：<span class="font-mono">{log_path_html}</span>
-              </div>
-            </div>
-          </div>
-        </main>
+    </div>
+    <div class="center">
+      <div class="loading">
+        <div class="spinner" aria-hidden="true"></div>
+        <div class="text">加载中…</div>
       </div>
     </div>
   </body>
