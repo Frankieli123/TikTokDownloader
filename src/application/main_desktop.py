@@ -384,6 +384,8 @@ def run_desktop() -> None:
     <style>
       {webui_css}
       html, body {{ height: 100%; margin: 0; }}
+      @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
+      .animate-spin {{ animation: spin 1s linear infinite; }}
     </style>
   </head>
   <body>
@@ -416,7 +418,7 @@ def run_desktop() -> None:
           <div class="mx-auto max-w-4xl">
             <div class="rounded-lg border bg-card text-card-foreground shadow-sm p-6">
               <div class="flex items-center gap-3">
-                <svg class="h-5 w-5 animate-spin text-muted-foreground" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <svg width="16" height="16" class="h-4 w-4 animate-spin text-muted-foreground" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" opacity="0.25"></circle>
                   <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" stroke-width="4" stroke-linecap="round"></path>
                 </svg>

@@ -65,7 +65,7 @@ jobs:
       - name: 创建压缩包
         shell: pwsh
         run: |
-          $zip = "${env:APP_NAME}_V${env:RELEASE_TAG}_${{ runner.os }}_${{ runner.arch }}.zip"
+          $zip = "${env:APP_NAME}_${env:RELEASE_TAG}_${{ runner.os }}.zip"
           if (Test-Path $zip) { Remove-Item $zip -Force }
           Compress-Archive -Path ("dist\\{0}\\*" -f $env:APP_NAME) -DestinationPath $zip
           echo "ZIP_NAME=$zip" >> $env:GITHUB_ENV
