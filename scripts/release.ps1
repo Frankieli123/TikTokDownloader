@@ -15,8 +15,15 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 function ExecGit([string[]]$GitArgs) {
-  $output = & git @GitArgs 2>&1
-  if ($LASTEXITCODE -ne 0) {
+  $oldEap = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    $output = & git @GitArgs 2>&1
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $oldEap
+  }
+  if ($exitCode -ne 0) {
     throw ($output | Out-String).Trim()
   }
   return ($output | Out-String).TrimEnd()
