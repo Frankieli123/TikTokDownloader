@@ -21,6 +21,7 @@ from src.custom import (
     VERSION_BETA,
     VERSION_MAJOR,
     VERSION_MINOR,
+    VERSION_PATCH,
     parse_release_version,
 )
 from src.manager import Database, DownloadRecorder
@@ -51,6 +52,7 @@ __all__ = ["TikTokDownloader"]
 class TikTokDownloader:
     VERSION_MAJOR = VERSION_MAJOR
     VERSION_MINOR = VERSION_MINOR
+    VERSION_PATCH = VERSION_PATCH
     VERSION_BETA = VERSION_BETA
     NAME = PROJECT_NAME
     WIDTH = 50
@@ -260,19 +262,21 @@ class TikTokDownloader:
             )
             latest_tag = str(response.url).rstrip("/").split("/")[-1]
             try:
-                latest_major, latest_minor = parse_release_version(latest_tag)
+                latest_major, latest_minor, latest_patch = parse_release_version(latest_tag)
             except Exception:
                 self.console.warning(_("未找到最新发布版本"))
                 self.console.print(RELEASES)
                 return
-            if latest_major > self.VERSION_MAJOR or latest_minor > self.VERSION_MINOR:
+            current = (self.VERSION_MAJOR, self.VERSION_MINOR, self.VERSION_PATCH)
+            latest = (latest_major, latest_minor, latest_patch)
+            if latest > current:
                 self.console.warning(
-                    _("检测到新版本: {major}.{minor}").format(
-                        major=latest_major, minor=latest_minor
+                    _("检测到新版本: {major}.{minor}.{patch}").format(
+                        major=latest_major, minor=latest_minor, patch=latest_patch
                     ),
                 )
                 self.console.print(RELEASES)
-            elif latest_minor == self.VERSION_MINOR and self.VERSION_BETA:
+            elif latest == current and self.VERSION_BETA:
                 self.console.warning(
                     _("当前版本为开发版, 可更新至正式版"),
                 )

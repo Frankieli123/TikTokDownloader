@@ -67,7 +67,7 @@ def is_valid_token(token: str) -> bool:
     return True
 
 
-def parse_release_version(tag: str) -> tuple[int, int]:
+def parse_release_version(tag: str) -> tuple[int, int, int]:
     tag = (tag or "").strip()
     if tag.startswith(("v", "V")):
         tag = tag[1:]
@@ -75,4 +75,9 @@ def parse_release_version(tag: str) -> tuple[int, int]:
     parts = tag.split(".")
     if len(parts) < 2:
         raise ValueError(f"invalid release tag: {tag!r}")
-    return int(parts[0]), int(parts[1])
+    major = int(parts[0])
+    minor = int(parts[1])
+    patch = 0
+    if len(parts) >= 3 and parts[2].isdigit():
+        patch = int(parts[2])
+    return major, minor, patch

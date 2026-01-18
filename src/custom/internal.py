@@ -4,8 +4,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.joinpath("Volume")
 PROJECT_ROOT.mkdir(exist_ok=True)
 VERSION_MAJOR = 5
 VERSION_MINOR = 8
-VERSION_BETA = True
-__VERSION__ = f"{VERSION_MAJOR}.{VERSION_MINOR}.{'beta' if VERSION_BETA else 'stable'}"
+VERSION_PATCH = 3
+VERSION_BETA = False
+__VERSION__ = f"{VERSION_MAJOR}.{VERSION_MINOR}.{VERSION_PATCH}{'.beta' if VERSION_BETA else ''}"
 PROJECT_NAME = "禾风起工具箱"
 
 REPOSITORY = "https://github.com/Frankieli123/TikTokDownloader"

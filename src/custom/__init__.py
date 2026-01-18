@@ -11,6 +11,7 @@ from .internal import (
     PROJECT_ROOT,
     VERSION_MAJOR,
     VERSION_MINOR,
+    VERSION_PATCH,
     VERSION_BETA,
     RELEASES,
     REPOSITORY,
