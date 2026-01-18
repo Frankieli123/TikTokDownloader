@@ -32,6 +32,8 @@ export interface UpdateInfo {
   latest_version: string
   update_available: boolean
   releases_url: string
+  latest_tag?: string
+  release_notes?: string
 }
 
 export type AccountTab = "post" | "favorite"

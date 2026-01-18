@@ -271,6 +271,9 @@ export const api = {
   checkUpdate: async (): Promise<UpdateInfo> => {
     return requestJson<UpdateInfo>("/ui-api/update/check")
   },
+  applyUpdate: async (): Promise<void> => {
+    return requestJson<void>("/ui-api/update/apply", { method: "POST" })
+  },
   getClipboardMonitorStatus: async (): Promise<{ running: boolean }> => {
     return requestJson<{ running: boolean }>("/ui-api/monitor/clipboard")
   },

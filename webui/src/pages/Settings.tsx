@@ -359,6 +359,7 @@ export function SettingsPage() {
   const [deletingRecords, setDeletingRecords] = useState(false)
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null)
   const [checkingUpdate, setCheckingUpdate] = useState(false)
+  const [applyingUpdate, setApplyingUpdate] = useState(false)
   const [clipboardRunning, setClipboardRunning] = useState(false)
   const [clipboardLoading, setClipboardLoading] = useState(false)
 
@@ -504,6 +505,29 @@ export function SettingsPage() {
       setError(String(e))
     } finally {
       setCheckingUpdate(false)
+    }
+  }
+
+  const applyUpdate = async () => {
+    if (!updateInfo?.update_available) return
+    if (!window.confirm("确定要自动下载并更新吗？更新过程中程序将自动重启。")) return
+
+    setApplyingUpdate(true)
+    setMessage(null)
+    setError(null)
+    try {
+      await api.applyUpdate()
+      notify.success("正在更新，请稍候…")
+      const pywebview = (window as any).pywebview as { api?: { close?: () => void } } | undefined
+      if (pywebview?.api?.close) {
+        setTimeout(() => pywebview.api?.close?.(), 1500)
+      } else {
+        notify.info("未检测到桌面环境，请前往发布页手动下载更新。")
+        setApplyingUpdate(false)
+      }
+    } catch (e) {
+      setError(String(e))
+      setApplyingUpdate(false)
     }
   }
 
@@ -802,7 +826,7 @@ export function SettingsPage() {
                 </div>
                 <Button
                   variant="outline"
-                  disabled={checkingUpdate || saving}
+                  disabled={checkingUpdate || applyingUpdate || saving}
                   onClick={() => void checkUpdate()}
                 >
                   {checkingUpdate ? "检查中..." : "检查更新"}
@@ -818,7 +842,7 @@ export function SettingsPage() {
                   <div className={updateInfo.update_available ? "text-primary font-medium" : "text-muted-foreground"}>
                     {updateInfo.update_available ? "发现新版本" : "已是最新版本"}
                   </div>
-                  <div className="pt-1">
+                  <div className="flex items-center gap-2 pt-1">
                     <Button
                       size="sm"
                       variant="ghost"
@@ -827,7 +851,22 @@ export function SettingsPage() {
                     >
                       打开发布页
                     </Button>
+                    {updateInfo.update_available ? (
+                      <Button size="sm" disabled={applyingUpdate || saving} onClick={() => void applyUpdate()}>
+                        {applyingUpdate ? "更新中..." : "下载并更新"}
+                      </Button>
+                    ) : null}
                   </div>
+                  {updateInfo.release_notes ? (
+                    <details className="pt-2">
+                      <summary className="cursor-pointer select-none text-xs text-muted-foreground hover:text-foreground">
+                        查看更新内容
+                      </summary>
+                      <div className="mt-2 max-h-60 overflow-auto rounded-md border bg-muted/50 p-3">
+                        <pre className="whitespace-pre-wrap text-xs leading-relaxed">{updateInfo.release_notes}</pre>
+                      </div>
+                    </details>
+                  ) : null}
                 </div>
               ) : null}
             </CardContent>

@@ -262,6 +262,7 @@ class WebUIServer(APIServer):
         super().__init__(*args, **kwargs)
         self.ui_tasks = UITaskManager()
         self._ui_task_lock = Lock()
+        self._update_lock = Lock()
         self._clipboard_monitor = None
         self._clipboard_monitor_task = None
         self._clipboard_state_lock = Lock()
@@ -594,17 +595,46 @@ class WebUIServer(APIServer):
         )
         async def ui_check_update(token: str = Depends(token_dependency)):
             import httpx
+            import re
+
+            ua = "HeFengQi-Toolbox"
+            latest_tag = ""
+            release_notes = ""
+            releases_url = RELEASES
 
             try:
-                response = httpx.get(
-                    RELEASES,
+                match = re.search(r"github\\.com/([^/]+)/([^/#?]+)", REPOSITORY)
+                if not match:
+                    raise ValueError("invalid repository url")
+                owner, repo = match.group(1), match.group(2)
+                api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
+                api_resp = httpx.get(
+                    api_url,
                     timeout=5,
                     follow_redirects=True,
+                    headers={
+                        "Accept": "application/vnd.github+json",
+                        "User-Agent": ua,
+                    },
                 )
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"check update failed: {e!r}") from None
+                api_resp.raise_for_status()
+                api_json = api_resp.json()
+                latest_tag = str(api_json.get("tag_name") or "").strip()
+                release_notes = str(api_json.get("body") or "").strip()
+                releases_url = str(api_json.get("html_url") or RELEASES).strip() or RELEASES
+            except Exception:
+                pass
 
-            latest_tag = str(response.url).rstrip("/").split("/")[-1]
+            if not latest_tag:
+                try:
+                    response = httpx.get(
+                        RELEASES,
+                        timeout=5,
+                        follow_redirects=True,
+                    )
+                except Exception as e:
+                    raise HTTPException(status_code=500, detail=f"check update failed: {e!r}") from None
+                latest_tag = str(response.url).rstrip("/").split("/")[-1]
             try:
                 latest_major, latest_minor = parse_release_version(latest_tag)
                 latest_version = f"{latest_major}.{latest_minor}"
@@ -625,8 +655,252 @@ class WebUIServer(APIServer):
                 "latest_minor": latest_minor,
                 "latest_version": latest_version,
                 "update_available": bool(update_available),
-                "releases_url": RELEASES,
+                "releases_url": releases_url,
+                "latest_tag": latest_tag,
+                "release_notes": release_notes,
             }
+
+        @self.server.post(
+            "/ui-api/update/apply",
+            tags=["WebUI"],
+        )
+        async def ui_apply_update(token: str = Depends(token_dependency)):
+            import os
+            import re
+            import shutil
+            import sys
+            import tempfile
+            import zipfile
+            from asyncio import to_thread
+
+            import httpx
+
+            def _parse_github_repo(url: str) -> tuple[str, str]:
+                match = re.search(r"github\\.com/([^/]+)/([^/#?]+)", url or "")
+                if not match:
+                    raise ValueError("invalid repository url")
+                return match.group(1), match.group(2)
+
+            def _select_release_asset(assets: list[dict]) -> tuple[str, str]:
+                zip_assets = [
+                    i for i in assets if str(i.get("name", "")).lower().endswith(".zip")
+                ]
+                if not zip_assets:
+                    raise ValueError("no zip assets found")
+                preferred = [i for i in zip_assets if "windows" in str(i.get("name", "")).lower()]
+                candidates = preferred or zip_assets
+                chosen = max(candidates, key=lambda i: int(i.get("size") or 0))
+                return str(chosen.get("name") or ""), str(chosen.get("browser_download_url") or "")
+
+            def _safe_extract(zip_path: Path, dest: Path) -> None:
+                dest_resolved = dest.resolve()
+                with zipfile.ZipFile(zip_path) as z:
+                    for info in z.infolist():
+                        name = (info.filename or "").replace("\\", "/")
+                        if not name or name.endswith("/"):
+                            continue
+                        target = dest.joinpath(*name.split("/"))
+                        try:
+                            if not target.resolve().is_relative_to(dest_resolved):
+                                raise ValueError(f"unsafe zip entry: {info.filename!r}")
+                        except Exception:
+                            raise ValueError(f"unsafe zip entry: {info.filename!r}") from None
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        with z.open(info) as src, target.open("wb") as out:
+                            shutil.copyfileobj(src, out)
+
+            def _find_package_root(extract_dir: Path) -> Path:
+                if extract_dir.joinpath("_internal").exists():
+                    return extract_dir
+                children = [p for p in extract_dir.iterdir() if p.is_dir()]
+                if len(children) == 1 and children[0].joinpath("_internal").exists():
+                    return children[0]
+                return extract_dir
+
+            def _write_apply_script(script_path: Path) -> None:
+                script = r"""
+param(
+  [Parameter(Mandatory=$true)][int]$Pid,
+  [Parameter(Mandatory=$true)][string]$Source,
+  [Parameter(Mandatory=$true)][string]$Target,
+  [Parameter(Mandatory=$true)][string]$Exe,
+  [string]$LogPath
+)
+
+$ErrorActionPreference = "Stop"
+
+function LogLine([string]$Text) {
+  if (-not $LogPath) { return }
+  try {
+    Add-Content -LiteralPath $LogPath -Encoding UTF8 -Value ("[{0}] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Text)
+  } catch {}
+}
+
+try {
+  LogLine ("update: wait pid=" + $Pid)
+  try {
+    if (Get-Process -Id $Pid -ErrorAction SilentlyContinue) {
+      Wait-Process -Id $Pid -Timeout 600 -ErrorAction SilentlyContinue
+    }
+  } catch {}
+  Start-Sleep -Milliseconds 300
+
+  $vol = Join-Path $Target "_internal\\Volume"
+  $tmpVol = Join-Path ([System.IO.Path]::GetTempPath()) ("HeFengQi-Toolbox-Volume-" + [guid]::NewGuid().ToString("N"))
+  if (Test-Path -LiteralPath $vol) {
+    LogLine ("update: move volume out -> " + $tmpVol)
+    New-Item -ItemType Directory -Path $tmpVol -Force | Out-Null
+    Move-Item -LiteralPath $vol -Destination $tmpVol -Force
+  }
+
+  LogLine ("update: robocopy /MIR source=" + $Source + " target=" + $Target)
+  & robocopy $Source $Target /MIR /R:2 /W:1 /NFL /NDL /NP | Out-Null
+  $code = $LASTEXITCODE
+  if ($code -ge 8) {
+    throw ("robocopy failed with exit code " + $code)
+  }
+
+  if (Test-Path -LiteralPath (Join-Path $tmpVol "Volume")) {
+    LogLine "update: restore volume"
+    New-Item -ItemType Directory -Path (Join-Path $Target "_internal") -Force | Out-Null
+    if (Test-Path -LiteralPath $vol) {
+      Remove-Item -LiteralPath $vol -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    Move-Item -LiteralPath (Join-Path $tmpVol "Volume") -Destination $vol -Force
+    Remove-Item -LiteralPath $tmpVol -Recurse -Force -ErrorAction SilentlyContinue
+  }
+
+  $exePath = Join-Path $Target $Exe
+  LogLine ("update: start " + $exePath)
+  Start-Process -FilePath $exePath -WorkingDirectory $Target | Out-Null
+} catch {
+  LogLine ("update: failed " + $_.ToString())
+  throw
+}
+"""
+                script_path.write_text(script.strip() + "\n", encoding="utf-8-sig")
+
+            def _apply_update() -> dict:
+                if sys.platform != "win32":
+                    raise HTTPException(status_code=400, detail="auto update is only supported on Windows")
+                if not (getattr(sys, "frozen", False) or getattr(sys, "_MEIPASS", None)):
+                    raise HTTPException(status_code=400, detail="auto update is only available in packaged build")
+
+                install_dir = Path(sys.executable).resolve().parent
+                exe_name = Path(sys.executable).name
+                owner, repo = _parse_github_repo(REPOSITORY)
+                api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
+
+                try:
+                    ua = "HeFengQi-Toolbox"
+                    release = httpx.get(
+                        api_url,
+                        timeout=10,
+                        follow_redirects=True,
+                        headers={
+                            "Accept": "application/vnd.github+json",
+                            "User-Agent": ua,
+                        },
+                    )
+                    release.raise_for_status()
+                    release_json = release.json()
+                except Exception as e:
+                    raise HTTPException(status_code=500, detail=f"fetch release failed: {e!r}") from None
+
+                tag = str(release_json.get("tag_name") or "").strip()
+                assets = list(release_json.get("assets") or [])
+                try:
+                    asset_name, asset_url = _select_release_asset(assets)
+                except Exception as e:
+                    raise HTTPException(status_code=500, detail=f"select asset failed: {e!r}") from None
+                if not asset_url:
+                    raise HTTPException(status_code=500, detail="empty asset url")
+
+                base = Path(tempfile.gettempdir()).joinpath("HeFengQi-Toolbox", "update", tag or "latest")
+                try:
+                    shutil.rmtree(base, ignore_errors=True)
+                except Exception:
+                    pass
+                base.mkdir(parents=True, exist_ok=True)
+
+                zip_path = base.joinpath(asset_name or "package.zip")
+                extract_dir = base.joinpath("package")
+                log_path = base.joinpath("apply.log")
+                script_path = base.joinpath("apply.ps1")
+
+                try:
+                    with httpx.stream(
+                        "GET",
+                        asset_url,
+                        follow_redirects=True,
+                        timeout=None,
+                        headers={"User-Agent": ua},
+                    ) as r:
+                        r.raise_for_status()
+                        with zip_path.open("wb") as f:
+                            for chunk in r.iter_bytes():
+                                if chunk:
+                                    f.write(chunk)
+                except Exception as e:
+                    raise HTTPException(status_code=500, detail=f"download update failed: {e!r}") from None
+
+                try:
+                    extract_dir.mkdir(parents=True, exist_ok=True)
+                    _safe_extract(zip_path, extract_dir)
+                except Exception as e:
+                    raise HTTPException(status_code=500, detail=f"extract update failed: {e!r}") from None
+
+                source_dir = _find_package_root(extract_dir)
+                try:
+                    shutil.rmtree(source_dir.joinpath("_internal", "Volume"), ignore_errors=True)
+                except Exception:
+                    pass
+
+                if not source_dir.joinpath(exe_name).exists():
+                    raise HTTPException(status_code=500, detail="update package missing executable")
+
+                try:
+                    _write_apply_script(script_path)
+                except Exception as e:
+                    raise HTTPException(status_code=500, detail=f"write updater script failed: {e!r}") from None
+
+                args = [
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-WindowStyle",
+                    "Hidden",
+                    "-File",
+                    str(script_path),
+                    "-Pid",
+                    str(os.getpid()),
+                    "-Source",
+                    str(source_dir),
+                    "-Target",
+                    str(install_dir),
+                    "-Exe",
+                    str(exe_name),
+                    "-LogPath",
+                    str(log_path),
+                ]
+                try:
+                    Popen(
+                        args,
+                        creationflags=0x08000000,
+                    )
+                except Exception as e:
+                    raise HTTPException(status_code=500, detail=f"launch updater failed: {e!r}") from None
+
+                return {
+                    "ok": True,
+                    "restarting": True,
+                    "latest_tag": tag,
+                    "asset": asset_name,
+                }
+
+            async with self._update_lock:
+                return await to_thread(_apply_update)
 
         @self.server.get(
             "/ui-api/monitor/clipboard",
@@ -1656,7 +1930,7 @@ class WebUIServer(APIServer):
     @staticmethod
     def _patch_api_progress(task: UITask):
         original = getattr(API, "_progress_factory", None)
-        API._progress_factory = lambda: EventProgress(
+        API._progress_factory = lambda *args, **kwargs: EventProgress(
             task.emit,
             throttle_ms=200,
             id_prefix=f"{uuid4().hex}:",
