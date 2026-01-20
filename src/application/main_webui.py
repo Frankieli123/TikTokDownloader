@@ -675,6 +675,7 @@ class WebUIServer(APIServer):
             import shutil
             import sys
             import tempfile
+            import traceback
             import zipfile
             from asyncio import to_thread
 
@@ -741,6 +742,9 @@ function LogLine([string]$Text) {
   } catch {}
 }
 
+$vol = Join-Path $Target "_internal\\Volume"
+$tmpVol = Join-Path ([System.IO.Path]::GetTempPath()) ("HeFengQi-Toolbox-Volume-" + [guid]::NewGuid().ToString("N"))
+
 try {
   LogLine ("update: wait pid=" + $Pid)
   try {
@@ -750,8 +754,6 @@ try {
   } catch {}
   Start-Sleep -Milliseconds 300
 
-  $vol = Join-Path $Target "_internal\\Volume"
-  $tmpVol = Join-Path ([System.IO.Path]::GetTempPath()) ("HeFengQi-Toolbox-Volume-" + [guid]::NewGuid().ToString("N"))
   if (Test-Path -LiteralPath $vol) {
     LogLine ("update: move volume out -> " + $tmpVol)
     New-Item -ItemType Directory -Path $tmpVol -Force | Out-Null
@@ -779,11 +781,35 @@ try {
   LogLine ("update: start " + $exePath)
   Start-Process -FilePath $exePath -WorkingDirectory $Target | Out-Null
 } catch {
-  LogLine ("update: failed " + $_.ToString())
+  $err = $_.ToString()
+  try {
+    if (Test-Path -LiteralPath (Join-Path $tmpVol "Volume")) {
+      LogLine "update: restore volume (rollback)"
+      New-Item -ItemType Directory -Path (Join-Path $Target "_internal") -Force | Out-Null
+      if (Test-Path -LiteralPath $vol) {
+        Remove-Item -LiteralPath $vol -Recurse -Force -ErrorAction SilentlyContinue
+      }
+      Move-Item -LiteralPath (Join-Path $tmpVol "Volume") -Destination $vol -Force
+      Remove-Item -LiteralPath $tmpVol -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  } catch {
+    LogLine ("update: restore volume failed " + $_.ToString())
+  }
+  LogLine ("update: failed " + $err)
   throw
 }
 """
                 script_path.write_text(script.strip() + "\n", encoding="utf-8-sig")
+
+            def _write_error_log(text: str) -> str | None:
+                try:
+                    base = Path(tempfile.gettempdir()).joinpath("HeFengQi-Toolbox", "update")
+                    base.mkdir(parents=True, exist_ok=True)
+                    path = base.joinpath("last_error.log")
+                    path.write_text(text, encoding="utf-8", errors="ignore")
+                    return str(path)
+                except Exception:
+                    return None
 
             def _apply_update() -> dict:
                 if sys.platform != "win32":
@@ -796,8 +822,12 @@ try {
                 owner, repo = _parse_github_repo(REPOSITORY)
                 api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
 
+                ua = "HeFengQi-Toolbox"
+                tag = ""
+                asset_name = ""
+                asset_url = ""
+
                 try:
-                    ua = "HeFengQi-Toolbox"
                     release = httpx.get(
                         api_url,
                         timeout=10,
@@ -809,15 +839,38 @@ try {
                     )
                     release.raise_for_status()
                     release_json = release.json()
-                except Exception as e:
-                    raise HTTPException(status_code=500, detail=f"fetch release failed: {e!r}") from None
-
-                tag = str(release_json.get("tag_name") or "").strip()
-                assets = list(release_json.get("assets") or [])
-                try:
+                    tag = str(release_json.get("tag_name") or "").strip()
+                    assets = list(release_json.get("assets") or [])
                     asset_name, asset_url = _select_release_asset(assets)
-                except Exception as e:
-                    raise HTTPException(status_code=500, detail=f"select asset failed: {e!r}") from None
+                except Exception:
+                    pass
+
+                if not tag:
+                    try:
+                        resp = httpx.get(
+                            RELEASES,
+                            timeout=10,
+                            follow_redirects=True,
+                            headers={"User-Agent": ua},
+                        )
+                        tag = str(resp.url).rstrip("/").split("/")[-1]
+                    except Exception as e:
+                        raise HTTPException(status_code=500, detail=f"resolve latest tag failed: {e!r}") from None
+
+                if not asset_url:
+                    try:
+                        from urllib.parse import quote
+
+                        exe_stem = Path(sys.executable).stem
+                        asset_name = f"{exe_stem}_{tag}_Windows.zip"
+                        tag_q = quote(tag, safe="-_.~")
+                        asset_q = quote(asset_name, safe="-_.~")
+                        asset_url = (
+                            f"https://github.com/{owner}/{repo}/releases/download/{tag_q}/{asset_q}"
+                        )
+                    except Exception as e:
+                        raise HTTPException(status_code=500, detail=f"build asset url failed: {e!r}") from None
+
                 if not asset_url:
                     raise HTTPException(status_code=500, detail="empty asset url")
 
@@ -905,7 +958,16 @@ try {
                 }
 
             async with self._update_lock:
-                return await to_thread(_apply_update)
+                try:
+                    return await to_thread(_apply_update)
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    log_file = _write_error_log(traceback.format_exc())
+                    detail = f"apply update failed: {e!r}"
+                    if log_file:
+                        detail += f" (log: {log_file})"
+                    raise HTTPException(status_code=500, detail=detail) from None
 
         @self.server.get(
             "/ui-api/monitor/clipboard",

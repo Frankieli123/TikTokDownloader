@@ -1,11 +1,71 @@
 from pathlib import Path
+import re
+import sys
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.joinpath("Volume")
 PROJECT_ROOT.mkdir(exist_ok=True)
 VERSION_MAJOR = 5
 VERSION_MINOR = 8
-VERSION_PATCH = 3
+VERSION_PATCH = 4
 VERSION_BETA = False
+
+
+def _load_version_override() -> tuple[int, int, int, bool] | None:
+    def _read_text(path: Path) -> str | None:
+        try:
+            if path.is_file():
+                text = path.read_text(encoding="utf-8", errors="ignore").strip()
+                return text or None
+        except Exception:
+            return None
+        return None
+
+    candidates: list[Path] = []
+    if getattr(sys, "frozen", False):
+        try:
+            candidates.append(Path(sys.executable).resolve().parent.joinpath("version.txt"))
+        except Exception:
+            pass
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            candidates.append(Path(meipass).joinpath("version.txt"))
+
+    candidates.append(PROJECT_ROOT.parent.joinpath("version.txt"))
+
+    for path in candidates:
+        if not path:
+            continue
+        raw = _read_text(path)
+        if not raw:
+            continue
+
+        lowered = raw.lower()
+        beta = any(k in lowered for k in ("beta", "dev", "rc"))
+        match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", raw)
+        if not match:
+            continue
+
+        major = int(match.group(1))
+        minor = int(match.group(2))
+        patch = int(match.group(3) or 0)
+        return major, minor, patch, beta
+
+    if getattr(sys, "frozen", False):
+        try:
+            root_name = Path(sys.executable).resolve().parent.name
+            match = re.search(r"(\d+)\.(\d+)\.(\d+)", root_name)
+            if match:
+                major, minor, patch = int(match.group(1)), int(match.group(2)), int(match.group(3))
+                return major, minor, patch, False
+        except Exception:
+            pass
+
+    return None
+
+
+if override := _load_version_override():
+    VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, VERSION_BETA = override
+
 __VERSION__ = f"{VERSION_MAJOR}.{VERSION_MINOR}.{VERSION_PATCH}{'.beta' if VERSION_BETA else ''}"
 PROJECT_NAME = "禾风起工具箱"
 

@@ -62,6 +62,13 @@ jobs:
         run: |
           pyinstaller --noconsole --name "$env:APP_NAME" --icon=./static/images/DouK-Downloader.ico --add-data "static;static" --add-data "locale;locale" --collect-all emoji main.py
 
+      - name: 写入版本文件
+        shell: pwsh
+        run: |
+          $dir = ("dist\\{0}" -f $env:APP_NAME)
+          if (-not (Test-Path $dir)) { throw "dist not found: $dir" }
+          Set-Content -LiteralPath (Join-Path $dir "version.txt") -Value $env:RELEASE_TAG -Encoding utf8
+
       - name: 创建压缩包
         shell: pwsh
         run: |
