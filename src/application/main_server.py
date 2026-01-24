@@ -33,6 +33,7 @@ from ..models import (
     Reply,
     Settings,
     ShortUrl,
+    KuaishouText,
     UrlResponse,
     UserSearch,
     VideoSearch,
@@ -579,6 +580,77 @@ class APIServer(TikTok):
             extract: DetailTikTok, token: str = Depends(token_dependency)
         ):
             return await self.handle_detail(extract, True)
+
+        @self.server.post(
+            "/kuaishou/share",
+            summary=_("获取作品分享链接的重定向链接"),
+            description=_(
+                dedent("""
+                **参数**:
+
+                - **text**: 包含分享链接的字符串；必需参数
+                - **proxy**: 代理；可选参数
+                """)
+            ),
+            tags=["Kuaishou"],
+            response_model=DataResponse,
+        )
+        async def handle_share_kuaishou(
+            extract: ShortUrl, token: str = Depends(token_dependency)
+        ):
+            from ..kuaishou import KuaishouService
+
+            service = KuaishouService()
+            urls = await service.resolve_share_text(extract.text, proxy=extract.proxy)
+            if urls:
+                return DataResponse(
+                    message=_("请求链接成功！"),
+                    data={"urls": urls},
+                    params=extract.model_dump(),
+                )
+            return DataResponse(
+                message=_("请求链接失败！"),
+                data=None,
+                params=extract.model_dump(),
+            )
+
+        @self.server.post(
+            "/kuaishou/detail",
+            summary=_("获取作品数据"),
+            description=_(
+                dedent("""
+                **参数**:
+
+                - **text**: 作品链接，自动提取；必需参数
+                - **cookie**: Cookie；可选参数
+                - **proxy**: 代理；可选参数
+                """)
+            ),
+            tags=["Kuaishou"],
+            response_model=DataResponse,
+        )
+        async def handle_detail_kuaishou(
+            extract: KuaishouText, token: str = Depends(token_dependency)
+        ):
+            from ..kuaishou import KuaishouService
+
+            service = KuaishouService()
+            data = await service.fetch_detail(
+                extract.text,
+                cookie=extract.cookie,
+                proxy=extract.proxy,
+            )
+            if data:
+                return DataResponse(
+                    message=_("获取作品数据成功"),
+                    data=data,
+                    params=extract.model_dump(),
+                )
+            return DataResponse(
+                message=_("获取作品数据失败"),
+                data=None,
+                params=extract.model_dump(),
+            )
 
         @self.server.post(
             "/tiktok/account",

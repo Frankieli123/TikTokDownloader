@@ -56,6 +56,11 @@ class Parameter:
         "type",
     )
     CLEANER = Cleaner()
+    PLATFORM_DIRS = {
+        "douyin": "Douyin",
+        "tiktok": "TikTok",
+        "kuaishou": "Kuaishou",
+    }
     HEADERS = {"User-Agent": USERAGENT}
     NO_PROXY = {
         "http://": None,
@@ -111,7 +116,6 @@ class Parameter:
         self.settings = settings
         self.cookie_object = cookie_object
         self.ROOT = PROJECT_ROOT  # 项目根路径
-        self.cache = PROJECT_ROOT.joinpath("Cache")  # 缓存路径
         self.logger = logger(PROJECT_ROOT, console)
         self.logger.run()
         self.ab = ABogus()
@@ -154,7 +158,10 @@ class Parameter:
         # self.set_download_headers()
 
         self.root = self.__check_root(root)
+        self.root_douyin_override = self.__check_platform_root(kwargs.get("root_douyin"), platform=_("抖音"))
+        self.root_tiktok_override = self.__check_platform_root(kwargs.get("root_tiktok"), platform="TikTok")
         self.folder_name = self.__check_folder_name(folder_name)
+        self.refresh_storage_paths()
         self.name_format = self.__check_name_format(name_format)
         self.desc_length = self.__check_desc_length(desc_length)
         self.name_length = self.__check_name_length(name_length)
@@ -376,6 +383,25 @@ class Parameter:
             ).format(root=root),
         )
         return self.ROOT
+
+    def __check_platform_root(self, root: Any, *, platform: str) -> Path | None:
+        if not isinstance(root, str):
+            return None
+        if not (root := root.strip()):
+            return None
+        if (r := Path(root)).is_dir():
+            self.logger.info(f"{platform} root 参数已设置为 {root}", False)
+            return r
+        if r := self.__check_root_again(r):
+            self.logger.info(f"{platform} root 参数已设置为 {r}", False)
+            return r
+        self.logger.warning(
+            _("{platform} root 参数 {root} 不是有效的文件夹路径，将使用默认路径").format(
+                platform=platform,
+                root=root,
+            ),
+        )
+        return None
 
     @staticmethod
     def __check_root_again(root: Path) -> bool | Path:
@@ -830,6 +856,8 @@ class Parameter:
             "owner_url": vars(self.owner_url),
             "owner_url_tiktok": self.owner_url_tiktok,
             "root": str(self.root.resolve()),
+            "root_douyin": str(self.root_douyin.resolve()),
+            "root_tiktok": str(self.root_tiktok.resolve()),
             "folder_name": self.folder_name,
             "name_format": " ".join(self.name_format),
             "desc_length": self.desc_length,
@@ -893,6 +921,7 @@ class Parameter:
 
         cookie = data.pop("cookie", None)
         cookie_tiktok = data.pop("cookie_tiktok", None)
+        cookie_updated = cookie is not None or cookie_tiktok is not None
         if cookie is not None or cookie_tiktok is not None:
             self.set_cookie(
                 cookie if cookie is not None else (self.cookie_str or self.cookie_dict),
@@ -909,14 +938,24 @@ class Parameter:
         proxy = data.pop("proxy", None)
         proxy_tiktok = data.pop("proxy_tiktok", None)
 
+        root_douyin = data.pop("root_douyin", None)
+        root_tiktok = data.pop("root_tiktok", None)
+
         old_timeout = self.timeout
         self.set_general_params(data)
+        if root_douyin is not None:
+            self.root_douyin_override = self.__check_platform_root(root_douyin, platform=_("抖音"))
+        if root_tiktok is not None:
+            self.root_tiktok_override = self.__check_platform_root(root_tiktok, platform="TikTok")
+        self.__generate_folders()
         if isinstance(proxy, str) or isinstance(proxy_tiktok, str):
             await self.set_proxy(proxy, proxy_tiktok)
         elif self.timeout != old_timeout:
             await self.close_client()
             self.client = create_client(timeout=self.timeout, proxy=self.proxy)
             self.client_tiktok = create_client(timeout=self.timeout, proxy=self.proxy_tiktok)
+        if cookie_updated:
+            await self.update_params_offline()
         self.settings.update(self.get_settings_data())
 
     async def __update_cookie_data(self, data: dict) -> None:
@@ -1036,8 +1075,35 @@ class Parameter:
         await self.client_tiktok.aclose()
 
     def __generate_folders(self):
+        self.refresh_storage_paths()
+        for platform_root in (
+            self.root_douyin,
+            self.root_tiktok,
+            self.root_kuaishou,
+        ):
+            platform_root.mkdir(parents=True, exist_ok=True)
+            platform_root.joinpath(self.folder_name).mkdir(parents=True, exist_ok=True)
+            for name in ("Data", "Music", "Live"):
+                platform_root.joinpath(name).mkdir(parents=True, exist_ok=True)
         self.compatible()
-        self.cache.mkdir(exist_ok=True)
+        self.cache.mkdir(parents=True, exist_ok=True)
+        self.cache_tiktok.mkdir(parents=True, exist_ok=True)
+        self.cache_kuaishou.mkdir(parents=True, exist_ok=True)
+
+    def refresh_storage_paths(self) -> None:
+        self.root_douyin = self.get_platform_root("douyin")
+        self.root_tiktok = self.get_platform_root("tiktok")
+        self.root_kuaishou = self.get_platform_root("kuaishou")
+        self.cache = self.root_douyin.joinpath("Cache")
+        self.cache_tiktok = self.root_tiktok.joinpath("Cache")
+        self.cache_kuaishou = self.root_kuaishou.joinpath("Cache")
+
+    def get_platform_root(self, platform: str) -> Path:
+        if platform == "douyin" and self.root_douyin_override is not None:
+            return self.root_douyin_override
+        if platform == "tiktok" and self.root_tiktok_override is not None:
+            return self.root_tiktok_override
+        return self.root.joinpath(self.PLATFORM_DIRS.get(platform, platform))
 
     def __set_browser_info(
         self,
@@ -1209,7 +1275,9 @@ class Parameter:
         return f"{key}={value}" if return_key else value
 
     def compatible(self):
-        if (
-            old := self.ROOT.parent.joinpath("Cache")
-        ).exists() and not self.cache.exists():
-            move(old, self.cache)
+        if self.root.resolve() != self.ROOT.resolve():
+            return
+        for old in (self.ROOT.parent.joinpath("Cache"), self.ROOT.joinpath("Cache")):
+            if old.exists() and not self.cache.exists():
+                move(old, self.cache)
+                break

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react"
 
 import { api } from "@/lib/api"
 import { notify } from "@/lib/notify"
+import { KuaishouSettingsPage } from "./KuaishouSettings"
+import { usePlatform } from "@/lib/platform"
 import type {
   AccountTab,
   AccountUrlItem,
@@ -12,6 +14,7 @@ import type {
   UIConfig,
   UpdateInfo,
 } from "@/types"
+import { DatePickerButton } from "@/components/DatePickerButton"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -124,18 +127,24 @@ function AccountListEditor(props: {
                 </Select>
               </TableCell>
               <TableCell>
-                <Input
-                  value={String(row.earliest ?? "")}
-                  onChange={(e) => updateRow(index, { earliest: e.target.value })}
-                  placeholder="YYYY/MM/DD 或 天数"
-                />
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={String(row.earliest ?? "")}
+                    onChange={(e) => updateRow(index, { earliest: e.target.value })}
+                    placeholder="YYYY/MM/DD 或 天数"
+                  />
+                  <DatePickerButton onSelect={(value) => updateRow(index, { earliest: value })} />
+                </div>
               </TableCell>
               <TableCell>
-                <Input
-                  value={String(row.latest ?? "")}
-                  onChange={(e) => updateRow(index, { latest: e.target.value })}
-                  placeholder="YYYY/MM/DD 或 天数"
-                />
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={String(row.latest ?? "")}
+                    onChange={(e) => updateRow(index, { latest: e.target.value })}
+                    placeholder="YYYY/MM/DD 或 天数"
+                  />
+                  <DatePickerButton onSelect={(value) => updateRow(index, { latest: value })} />
+                </div>
               </TableCell>
               <TableCell>
                 <Input value={row.mark} onChange={(e) => updateRow(index, { mark: e.target.value })} />
@@ -345,6 +354,11 @@ function TikTokBrowserInfoEditor(props: {
 }
 
 export function SettingsPage() {
+  const { platform } = usePlatform()
+
+  const isTikTok = platform === "tiktok"
+  const supportedPlatform = platform === "douyin" || platform === "tiktok"
+
   const [settings, setSettings] = useState<SettingsData | null>(null)
   const [uiConfig, setUiConfig] = useState<UIConfig | null>(null)
   const [cookie, setCookie] = useState("")
@@ -374,6 +388,7 @@ export function SettingsPage() {
   )
 
   useEffect(() => {
+    if (!supportedPlatform) return
     let mounted = true
     const load = async () => {
       try {
@@ -397,7 +412,7 @@ export function SettingsPage() {
     return () => {
       mounted = false
     }
-  }, [])
+  }, [supportedPlatform])
 
   const update = (patch: Partial<SettingsData>) => {
     if (!settings) return
@@ -413,7 +428,30 @@ export function SettingsPage() {
     setError(null)
     try {
       await api.updateUIConfig({ record: uiConfig.record, logger: uiConfig.logger })
-      const next = await api.saveSettings({ ...settings, cookie, cookie_tiktok: cookieTikTok })
+
+      const normalizeDateOrDays = (value: unknown): string | number => {
+        if (typeof value === "number") return value
+        const s = typeof value === "string" ? value.trim() : String(value ?? "").trim()
+        if (!s) return ""
+        if (/^\d+(?:\.\d+)?$/.test(s)) {
+          const n = Number(s)
+          return Number.isFinite(n) ? n : s
+        }
+        return s
+      }
+      const normalizeAccountRow = (row: AccountUrlItem): AccountUrlItem => ({
+        ...row,
+        earliest: normalizeDateOrDays(row.earliest),
+        latest: normalizeDateOrDays(row.latest),
+      })
+
+      const next = await api.saveSettings({
+        ...settings,
+        accounts_urls: (settings.accounts_urls ?? []).map(normalizeAccountRow),
+        accounts_urls_tiktok: (settings.accounts_urls_tiktok ?? []).map(normalizeAccountRow),
+        cookie,
+        cookie_tiktok: cookieTikTok,
+      })
       setSettings(next)
       setCookie(cookieToString(next.cookie))
       setCookieTikTok(cookieToString(next.cookie_tiktok))
@@ -423,6 +461,22 @@ export function SettingsPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  if (platform === "kuaishou") {
+    return <KuaishouSettingsPage />
+  }
+
+  if (!supportedPlatform) {
+    return (
+      <div className="mx-auto max-w-6xl space-y-6 pb-10">
+        <Card>
+          <CardContent className="py-16 text-center text-sm text-muted-foreground">
+            该平台暂未接入
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   if (!settings || !uiConfig) {
@@ -566,34 +620,29 @@ export function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 pb-10">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <div className="text-lg font-semibold">设置</div>
-          <div className="text-sm text-muted-foreground">仅本机生效，保存后立即应用。</div>
-        </div>
-        <Button onClick={saveAll} disabled={!canSave}>
-          {saving ? "保存中..." : "保存"}
-        </Button>
-      </div>
-
-      {message ? <div className="text-sm text-muted-foreground">{message}</div> : null}
-      {error ? <div className="text-sm text-destructive">{error}</div> : null}
-
       <Tabs defaultValue="general">
-        <TabsList>
-          <TabsTrigger value="general">通用</TabsTrigger>
-          <TabsTrigger value="accounts">账号</TabsTrigger>
-          <TabsTrigger value="mix">合集</TabsTrigger>
-          <TabsTrigger value="network">Cookie / 代理</TabsTrigger>
-          <TabsTrigger value="advanced">高级</TabsTrigger>
-        </TabsList>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <TabsList>
+              <TabsTrigger value="general">通用</TabsTrigger>
+              <TabsTrigger value="accounts">账号</TabsTrigger>
+              <TabsTrigger value="mix">合集</TabsTrigger>
+              <TabsTrigger value="network">Cookie / 代理</TabsTrigger>
+              <TabsTrigger value="advanced">高级</TabsTrigger>
+            </TabsList>
+            <Button onClick={saveAll} disabled={!canSave}>
+              {saving ? "保存中..." : "保存"}
+            </Button>
+          </div>
 
-        <TabsContent value="general" className="mt-6 space-y-6">
-          <Card>
-            <CardHeader className="py-5">
-              <CardTitle>程序</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
+          {message ? <div className="text-sm text-muted-foreground">{message}</div> : null}
+          {error ? <div className="text-sm text-destructive">{error}</div> : null}
+
+          <TabsContent value="general" className="mt-6 space-y-6">
+            <Card>
+              <CardHeader className="py-5">
+                <CardTitle>程序</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="flex items-center gap-2 pt-1">
                   <Checkbox checked={uiConfig.record} onCheckedChange={(v) => setUiConfig({ ...uiConfig, record: Boolean(v) })} />
@@ -609,8 +658,11 @@ export function SettingsPage() {
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label>下载根目录</Label>
-                  <Input value={settings.root ?? ""} onChange={(e) => update({ root: e.target.value })} />
+                  <Label>{isTikTok ? "TikTok 平台目录" : "抖音平台目录"}</Label>
+                  <Input
+                    value={isTikTok ? (settings.root_tiktok ?? "") : (settings.root_douyin ?? "")}
+                    onChange={(e) => update(isTikTok ? { root_tiktok: e.target.value } : { root_douyin: e.target.value })}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>下载文件夹名</Label>
@@ -879,100 +931,115 @@ export function SettingsPage() {
               <CardTitle>平台开关</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-2">
-              <div className="flex items-center gap-2 pt-1">
-                <Checkbox checked={settings.douyin_platform} onCheckedChange={(v) => update({ douyin_platform: Boolean(v) })} />
-                <Label>启用抖音</Label>
-              </div>
-              <div className="flex items-center gap-2 pt-1">
-                <Checkbox checked={settings.tiktok_platform} onCheckedChange={(v) => update({ tiktok_platform: Boolean(v) })} />
-                <Label>启用 TikTok</Label>
-              </div>
+              {!isTikTok ? (
+                <div className="flex items-center gap-2 pt-1">
+                  <Checkbox
+                    checked={settings.douyin_platform}
+                    onCheckedChange={(v) => update({ douyin_platform: Boolean(v) })}
+                  />
+                  <Label>启用抖音</Label>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 pt-1">
+                  <Checkbox
+                    checked={settings.tiktok_platform}
+                    onCheckedChange={(v) => update({ tiktok_platform: Boolean(v) })}
+                  />
+                  <Label>启用 TikTok</Label>
+                </div>
+              )}
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="py-5">
-              <CardTitle>当前账号（用于“收藏”下载）</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2 md:col-span-2">
-                <Label>主页链接</Label>
-                <Input
-                  value={owner.url ?? ""}
-                  onChange={(e) => update({ owner_url: { ...owner, url: e.target.value } })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>标识</Label>
-                <Input
-                  value={owner.mark ?? ""}
-                  onChange={(e) => update({ owner_url: { ...owner, mark: e.target.value } })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>uid</Label>
-                <Input
-                  value={owner.uid ?? ""}
-                  onChange={(e) => update({ owner_url: { ...owner, uid: e.target.value } })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>sec_uid</Label>
-                <Input
-                  value={owner.sec_uid ?? ""}
-                  onChange={(e) => update({ owner_url: { ...owner, sec_uid: e.target.value } })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>昵称</Label>
-                <Input
-                  value={owner.nickname ?? ""}
-                  onChange={(e) => update({ owner_url: { ...owner, nickname: e.target.value } })}
-                />
-              </div>
-            </CardContent>
-          </Card>
+          {!isTikTok ? (
+            <Card>
+              <CardHeader className="py-5">
+                <CardTitle>当前账号（用于“收藏”下载）</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2 md:col-span-2">
+                  <Label>主页链接</Label>
+                  <Input
+                    value={owner.url ?? ""}
+                    onChange={(e) => update({ owner_url: { ...owner, url: e.target.value } })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>标识</Label>
+                  <Input
+                    value={owner.mark ?? ""}
+                    onChange={(e) => update({ owner_url: { ...owner, mark: e.target.value } })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>uid</Label>
+                  <Input
+                    value={owner.uid ?? ""}
+                    onChange={(e) => update({ owner_url: { ...owner, uid: e.target.value } })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>sec_uid</Label>
+                  <Input
+                    value={owner.sec_uid ?? ""}
+                    onChange={(e) => update({ owner_url: { ...owner, sec_uid: e.target.value } })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>昵称</Label>
+                  <Input
+                    value={owner.nickname ?? ""}
+                    onChange={(e) => update({ owner_url: { ...owner, nickname: e.target.value } })}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
 
-          <Card>
-            <CardHeader className="py-5">
-              <CardTitle>账号列表（抖音）</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <AccountListEditor value={settings.accounts_urls} onChange={(v) => update({ accounts_urls: v })} />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="py-5">
-              <CardTitle>账号列表（TikTok）</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <AccountListEditor
-                value={settings.accounts_urls_tiktok}
-                onChange={(v) => update({ accounts_urls_tiktok: v })}
-              />
-            </CardContent>
-          </Card>
+          {!isTikTok ? (
+            <Card>
+              <CardHeader className="py-5">
+                <CardTitle>账号列表</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <AccountListEditor value={settings.accounts_urls} onChange={(v) => update({ accounts_urls: v })} />
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardHeader className="py-5">
+                <CardTitle>账号列表</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <AccountListEditor
+                  value={settings.accounts_urls_tiktok}
+                  onChange={(v) => update({ accounts_urls_tiktok: v })}
+                />
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="mix" className="mt-6 space-y-6">
-          <Card>
-            <CardHeader className="py-5">
-              <CardTitle>合集列表（抖音）</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <MixListEditor value={settings.mix_urls} onChange={(v) => update({ mix_urls: v })} />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="py-5">
-              <CardTitle>合集列表（TikTok）</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <MixListEditor value={settings.mix_urls_tiktok} onChange={(v) => update({ mix_urls_tiktok: v })} />
-            </CardContent>
-          </Card>
+          {!isTikTok ? (
+            <Card>
+              <CardHeader className="py-5">
+                <CardTitle>合集列表</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <MixListEditor value={settings.mix_urls} onChange={(v) => update({ mix_urls: v })} />
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardHeader className="py-5">
+                <CardTitle>合集列表</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <MixListEditor value={settings.mix_urls_tiktok} onChange={(v) => update({ mix_urls_tiktok: v })} />
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="network" className="mt-6 space-y-6">
@@ -981,54 +1048,67 @@ export function SettingsPage() {
               <CardTitle>Cookie</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="space-y-2">
-                <Label>抖音 Cookie</Label>
-                <Textarea value={cookie} onChange={(e) => setCookie(e.target.value)} rows={6} placeholder="粘贴 Cookie 字符串" />
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={Boolean(cookieAction) || saving}
-                    onClick={() => void importCookie("douyin", "clipboard")}
-                  >
-                    从剪贴板导入
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={Boolean(cookieAction) || saving}
-                    onClick={() => void importCookie("douyin", "browser")}
-                  >
-                    从浏览器导入
-                  </Button>
+              {!isTikTok ? (
+                <div className="space-y-2">
+                  <Label>抖音 Cookie</Label>
+                  <Textarea
+                    value={cookie}
+                    onChange={(e) => setCookie(e.target.value)}
+                    rows={6}
+                    placeholder="粘贴 Cookie 字符串"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={Boolean(cookieAction) || saving}
+                      onClick={() => void importCookie("douyin", "clipboard")}
+                    >
+                      从剪贴板导入
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={Boolean(cookieAction) || saving}
+                      onClick={() => void importCookie("douyin", "browser")}
+                    >
+                      从浏览器导入
+                    </Button>
+                  </div>
                 </div>
-              </div>
-              <div className="space-y-2">
-                <Label>TikTok Cookie</Label>
-                <Textarea value={cookieTikTok} onChange={(e) => setCookieTikTok(e.target.value)} rows={6} placeholder="粘贴 Cookie 字符串" />
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={Boolean(cookieAction) || saving}
-                    onClick={() => void importCookie("tiktok", "clipboard")}
-                  >
-                    从剪贴板导入
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={Boolean(cookieAction) || saving}
-                    onClick={() => void importCookie("tiktok", "browser")}
-                  >
-                    从浏览器导入
-                  </Button>
+              ) : (
+                <div className="space-y-2">
+                  <Label>TikTok Cookie</Label>
+                  <Textarea
+                    value={cookieTikTok}
+                    onChange={(e) => setCookieTikTok(e.target.value)}
+                    rows={6}
+                    placeholder="粘贴 Cookie 字符串"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={Boolean(cookieAction) || saving}
+                      onClick={() => void importCookie("tiktok", "clipboard")}
+                    >
+                      从剪贴板导入
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={Boolean(cookieAction) || saving}
+                      onClick={() => void importCookie("tiktok", "browser")}
+                    >
+                      从浏览器导入
+                    </Button>
+                  </div>
                 </div>
-              </div>
+              )}
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-xs text-muted-foreground">
@@ -1058,22 +1138,34 @@ export function SettingsPage() {
               <CardTitle>代理</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-2">
+              {!isTikTok ? (
                 <div className="space-y-2">
                   <Label>抖音代理</Label>
-                <Input value={settings.proxy ?? ""} onChange={(e) => update({ proxy: e.target.value })} placeholder="http://127.0.0.1:7890" />
-              </div>
+                  <Input
+                    value={settings.proxy ?? ""}
+                    onChange={(e) => update({ proxy: e.target.value })}
+                    placeholder="http://127.0.0.1:7890"
+                  />
+                </div>
+              ) : (
                 <div className="space-y-2">
                   <Label>TikTok 代理</Label>
                   <Input
                     value={settings.proxy_tiktok ?? ""}
-                  onChange={(e) => update({ proxy_tiktok: e.target.value })}
-                  placeholder="socks5://127.0.0.1:7890"
-                />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label>TikTok ttwid（twc_tiktok，可选）</Label>
-                <Input value={settings.twc_tiktok ?? ""} onChange={(e) => update({ twc_tiktok: e.target.value })} />
-              </div>
+                    onChange={(e) => update({ proxy_tiktok: e.target.value })}
+                    placeholder="socks5://127.0.0.1:7890"
+                  />
+                </div>
+              )}
+              {isTikTok ? (
+                <div className="space-y-2 md:col-span-2">
+                  <Label>TikTok ttwid（twc_tiktok，可选）</Label>
+                  <Input
+                    value={settings.twc_tiktok ?? ""}
+                    onChange={(e) => update({ twc_tiktok: e.target.value })}
+                  />
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1106,10 +1198,12 @@ export function SettingsPage() {
                 <Label>ffmpeg 路径</Label>
                 <Input value={settings.ffmpeg ?? ""} onChange={(e) => update({ ffmpeg: e.target.value })} />
               </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label>TikTok 主页参数（owner_url_tiktok，保留）</Label>
-                <Input value={settings.owner_url_tiktok ? "已设置" : "null"} disabled />
-              </div>
+              {isTikTok ? (
+                <div className="space-y-2 md:col-span-2">
+                  <Label>TikTok 主页参数（owner_url_tiktok，保留）</Label>
+                  <Input value={settings.owner_url_tiktok ? "已设置" : "null"} disabled />
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -1119,24 +1213,24 @@ export function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="text-sm text-muted-foreground">仅在需要时修改，错误参数可能导致请求失败。</div>
-              <details className="rounded-lg border p-4">
-                <summary className="cursor-pointer select-none text-sm font-medium">抖音浏览器参数</summary>
-                <div className="pt-4">
-                  <BrowserInfoEditor
-                    value={browserInfo}
-                    onChange={(v) => update({ browser_info: v })}
-                  />
-                </div>
-              </details>
-              <details className="rounded-lg border p-4">
-                <summary className="cursor-pointer select-none text-sm font-medium">TikTok 浏览器参数</summary>
-                <div className="pt-4">
-                  <TikTokBrowserInfoEditor
-                    value={browserInfoTikTok}
-                    onChange={(v) => update({ browser_info_tiktok: v })}
-                  />
-                </div>
-              </details>
+              {!isTikTok ? (
+                <details className="rounded-lg border p-4">
+                  <summary className="cursor-pointer select-none text-sm font-medium">抖音浏览器参数</summary>
+                  <div className="pt-4">
+                    <BrowserInfoEditor value={browserInfo} onChange={(v) => update({ browser_info: v })} />
+                  </div>
+                </details>
+              ) : (
+                <details className="rounded-lg border p-4">
+                  <summary className="cursor-pointer select-none text-sm font-medium">TikTok 浏览器参数</summary>
+                  <div className="pt-4">
+                    <TikTokBrowserInfoEditor
+                      value={browserInfoTikTok}
+                      onChange={(v) => update({ browser_info_tiktok: v })}
+                    />
+                  </div>
+                </details>
+              )}
             </CardContent>
           </Card>
 

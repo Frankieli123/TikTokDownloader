@@ -103,6 +103,21 @@ class DownloadTikTokOriginalTaskRequest(BaseModel):
     proxy: str | None = None
 
 
+class DownloadKuaishouDetailTaskRequest(BaseModel):
+    text: str = Field(min_length=1)
+    cookie: str | None = None
+    proxy: str | None = None
+
+
+class KuaishouSettingsUpdateRequest(BaseModel):
+    data: dict[str, Any] = Field(default_factory=dict)
+    record: bool | None = None
+
+
+class KuaishouCookieImportBrowserRequest(BaseModel):
+    browser: str | None = None
+
+
 class CollectLiveTaskRequest(BaseModel):
     platform: Literal["douyin", "tiktok"] = "douyin"
     text: str = Field(min_length=1)
@@ -381,7 +396,7 @@ class WebUIServer(APIServer):
                 id_prefix=f"{uuid4().hex}:",
             )
             try:
-                root, params, logger = self.record.run(self.parameter)
+                root, params, logger = self.record.run(self.parameter, tiktok=tiktok)
                 async with logger(root, console=self.console, **params) as record:
                     task.emit({"type": "phase", "name": "download"})
                     await self._handle_detail(
@@ -461,6 +476,7 @@ class WebUIServer(APIServer):
                     title = _("剪贴板下载链接作品") + " (抖音)"
                     task = self.ui_tasks.create("download.detail", title)
                     task.meta["source"] = "clipboard"
+                    task.meta["platform"] = "douyin"
                     task.emit({"type": "meta", **task.meta})
 
                     async def runner(download_ids: list[str]) -> None:
@@ -499,6 +515,7 @@ class WebUIServer(APIServer):
                     title = _("剪贴板下载链接作品") + " (TikTok)"
                     task = self.ui_tasks.create("download.detail", title)
                     task.meta["source"] = "clipboard"
+                    task.meta["platform"] = "tiktok"
                     task.emit({"type": "meta", **task.meta})
 
                     async def runner(download_ids: list[str]) -> None:
@@ -589,6 +606,201 @@ class WebUIServer(APIServer):
                     raise HTTPException(status_code=400, detail="ids is required")
                 await self.parameter.recorder.delete_ids(ids)
                 return {"ok": True}
+
+        @self.server.get(
+            "/ui-api/kuaishou/settings",
+            tags=["WebUI"],
+        )
+        async def ui_get_kuaishou_settings(token: str = Depends(token_dependency)):
+            from types import SimpleNamespace
+
+            from ..kuaishou import KuaishouService
+            from ..kuaishou.database import KuaishouDatabase
+            from ..kuaishou.paths import default_paths
+
+            service = KuaishouService()
+            settings = service.read_settings()
+            dummy = SimpleNamespace(root=default_paths().root, author_archive=bool(settings.get("author_archive")))
+            db = KuaishouDatabase(dummy)
+            async with db:
+                config = await db.read_config()
+            return {
+                "settings": settings,
+                "record": bool(config.get("Record", 1)),
+            }
+
+        @self.server.post(
+            "/ui-api/kuaishou/settings",
+            tags=["WebUI"],
+        )
+        async def ui_update_kuaishou_settings(
+            extract: KuaishouSettingsUpdateRequest,
+            token: str = Depends(token_dependency),
+        ):
+            from types import SimpleNamespace
+
+            from ..kuaishou import KuaishouService
+            from ..kuaishou.database import KuaishouDatabase
+            from ..kuaishou.paths import default_paths
+
+            async with self._ui_task_lock:
+                service = KuaishouService()
+                if extract.data:
+                    service.write_settings(extract.data)
+                if extract.record is not None:
+                    settings = service.read_settings()
+                    dummy = SimpleNamespace(root=default_paths().root, author_archive=bool(settings.get("author_archive")))
+                    db = KuaishouDatabase(dummy)
+                    async with db:
+                        await db.update_config_data("Record", int(bool(extract.record)))
+                return await ui_get_kuaishou_settings(token)
+
+        @self.server.post(
+            "/ui-api/kuaishou/recorder/delete",
+            tags=["WebUI"],
+        )
+        async def ui_kuaishou_delete_download_records(
+            extract: DownloadRecordDeleteRequest,
+            token: str = Depends(token_dependency),
+        ):
+            from types import SimpleNamespace
+
+            from ..kuaishou.database import KuaishouDatabase
+            from ..kuaishou.paths import default_paths
+
+            async with self._ui_task_lock:
+                ids = _split_inputs(extract.ids or "")
+                if not ids:
+                    raise HTTPException(status_code=400, detail="ids is required")
+                dummy = SimpleNamespace(root=default_paths().root, author_archive=False)
+                db = KuaishouDatabase(dummy)
+                async with db:
+                    await db.delete_download_data(ids)
+                return {"ok": True}
+
+        @self.server.post(
+            "/ui-api/kuaishou/recorder/clear",
+            tags=["WebUI"],
+        )
+        async def ui_kuaishou_clear_download_records(token: str = Depends(token_dependency)):
+            from types import SimpleNamespace
+
+            from ..kuaishou.database import KuaishouDatabase
+            from ..kuaishou.paths import default_paths
+
+            async with self._ui_task_lock:
+                dummy = SimpleNamespace(root=default_paths().root, author_archive=False)
+                db = KuaishouDatabase(dummy)
+                async with db:
+                    await db.delete_all_download_data()
+                return {"ok": True}
+
+        @self.server.post(
+            "/ui-api/kuaishou/cookie/import/clipboard",
+            tags=["WebUI"],
+        )
+        async def ui_import_kuaishou_cookie_from_clipboard(token: str = Depends(token_dependency)):
+            from pyperclip import paste
+
+            from ..kuaishou import KuaishouService
+
+            async with self._ui_task_lock:
+                try:
+                    raw_cookie = (paste() or "").strip()
+                except Exception as e:
+                    raise HTTPException(status_code=500, detail=f"无法读取剪贴板：{e}") from None
+                if not raw_cookie or "=" not in raw_cookie:
+                    raise HTTPException(status_code=400, detail="剪贴板内容不是有效的 Cookie 字符串")
+                service = KuaishouService()
+                service.write_settings({"cookie": raw_cookie})
+                return {"cookie": raw_cookie}
+
+        @self.server.post(
+            "/ui-api/kuaishou/cookie/import/browser",
+            tags=["WebUI"],
+        )
+        async def ui_import_kuaishou_cookie_from_browser(
+            extract: KuaishouCookieImportBrowserRequest,
+            token: str = Depends(token_dependency),
+        ):
+            from ..kuaishou import KuaishouService
+
+            async with self._ui_task_lock:
+                domains = ["kuaishou.com", "chenzhongtech.com", "kuaishou.cn", "chenzhongtech.cn"]
+
+                def try_read(name: str) -> dict[str, str]:
+                    fn = Browser.SUPPORT_BROWSER[name][0]
+                    try:
+                        cookies = fn(domains=domains)
+                        return {i.get("name"): i.get("value") for i in cookies if i.get("name")}
+                    except RuntimeError:
+                        return {}
+                    except Exception:
+                        return {}
+
+                chosen: str | None = None
+                cookie_dict: dict[str, str] = {}
+
+                if extract.browser:
+                    raw = extract.browser.strip()
+                    if raw:
+                        name = None
+                        try:
+                            index = int(raw) - 1
+                        except ValueError:
+                            index = None
+                        if index is not None:
+                            names = list(Browser.SUPPORT_BROWSER.keys())
+                            if 0 <= index < len(names):
+                                name = names[index]
+                        else:
+                            raw_lower = raw.lower()
+                            for candidate in Browser.SUPPORT_BROWSER.keys():
+                                if candidate.lower() == raw_lower:
+                                    name = candidate
+                                    break
+                        if not name:
+                            raise HTTPException(status_code=400, detail="未识别的浏览器名称/序号")
+                        chosen = name
+                        cookie_dict = try_read(name)
+                else:
+                    preferred = [
+                        "Edge",
+                        "Chrome",
+                        "Chromium",
+                        "Brave",
+                        "Vivaldi",
+                        "Opera",
+                        "OperaGX",
+                        "Firefox",
+                        "LibreWolf",
+                        "Arc",
+                    ]
+                    for name in preferred:
+                        if name not in Browser.SUPPORT_BROWSER:
+                            continue
+                        cookie_dict = try_read(name)
+                        if cookie_dict:
+                            chosen = name
+                            break
+
+                if not cookie_dict:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            "未从浏览器读取到 Cookie。"
+                            "Windows 上读取 Chromium/Chrome/Edge 的 Cookie 通常需要以管理员身份运行程序。"
+                        ),
+                    )
+
+                cookie_str = cookie_dict_to_str(cookie_dict)
+                service = KuaishouService()
+                service.write_settings({"cookie": cookie_str})
+
+                return {
+                    "browser": chosen,
+                    "cookie": cookie_str,
+                }
 
         @self.server.get(
             "/ui-api/update/check",
@@ -1185,10 +1397,14 @@ try {
             if not task.type.startswith("download."):
                 raise HTTPException(status_code=400, detail="task is not a download task")
 
+            platform = str(task.meta.get("platform") or "douyin")
+            platform_root = self.parameter.get_platform_root(platform)
+            download_root = platform_root.joinpath(self.parameter.folder_name)
+            download_root_override = task.meta.get("download_root")
             folder = (
-                self.parameter.root.joinpath(self.parameter.folder_name)
-                if task.type in {"download.detail", "download.tiktok_original"}
-                else self.parameter.root
+                platform_root.joinpath("Music")
+                if task.type == "download.collection_music"
+                else Path(str(download_root_override)) if download_root_override else download_root
             )
             folder.mkdir(parents=True, exist_ok=True)
             folder = folder.resolve()
@@ -1390,11 +1606,36 @@ try {
             tiktok = extract.platform == "tiktok"
             title = _("批量下载链接作品") + (" (TikTok)" if tiktok else " (抖音)")
             task = self.ui_tasks.create("download.detail", title)
+            task.meta["platform"] = extract.platform
+            task.emit({"type": "meta", **task.meta})
             self.ui_tasks.run(
                 task,
                 self._run_download_detail_task(
                     task,
                     tiktok=tiktok,
+                    text=extract.text,
+                    cookie=extract.cookie,
+                    proxy=extract.proxy,
+                ),
+            )
+            return task.snapshot()
+
+        @self.server.post(
+            "/ui-api/tasks/download/kuaishou/detail",
+            tags=["WebUI"],
+        )
+        async def create_download_kuaishou_detail_task(
+            extract: DownloadKuaishouDetailTaskRequest,
+            token: str = Depends(token_dependency),
+        ):
+            title = _("批量下载链接作品") + " (快手)"
+            task = self.ui_tasks.create("download.kuaishou.detail", title)
+            task.meta["platform"] = "kuaishou"
+            task.emit({"type": "meta", **task.meta})
+            self.ui_tasks.run(
+                task,
+                self._run_download_kuaishou_detail_task(
+                    task,
                     text=extract.text,
                     cookie=extract.cookie,
                     proxy=extract.proxy,
@@ -1413,6 +1654,8 @@ try {
             tiktok = extract.platform == "tiktok"
             title = _("批量下载账号作品") + (" (TikTok)" if tiktok else " (抖音)")
             task = self.ui_tasks.create("download.account", title)
+            task.meta["platform"] = extract.platform
+            task.emit({"type": "meta", **task.meta})
             self.ui_tasks.run(
                 task,
                 self._run_download_account_task(
@@ -1441,6 +1684,8 @@ try {
             tiktok = extract.platform == "tiktok"
             title = _("批量下载合集作品") + (" (TikTok)" if tiktok else " (抖音)")
             task = self.ui_tasks.create("download.mix", title)
+            task.meta["platform"] = extract.platform
+            task.emit({"type": "meta", **task.meta})
             self.ui_tasks.run(
                 task,
                 self._run_download_mix_task(
@@ -1464,6 +1709,8 @@ try {
         ):
             title = _("批量下载收藏作品") + " (抖音)"
             task = self.ui_tasks.create("download.collection", title)
+            task.meta["platform"] = "douyin"
+            task.emit({"type": "meta", **task.meta})
             self.ui_tasks.run(
                 task,
                 self._run_download_collection_task(
@@ -1484,6 +1731,8 @@ try {
         ):
             title = _("批量下载收藏夹作品") + " (抖音)"
             task = self.ui_tasks.create("download.collects", title)
+            task.meta["platform"] = "douyin"
+            task.emit({"type": "meta", **task.meta})
             self.ui_tasks.run(
                 task,
                 self._run_download_collects_task(
@@ -1505,6 +1754,8 @@ try {
         ):
             title = _("批量下载收藏音乐") + " (抖音)"
             task = self.ui_tasks.create("download.collection_music", title)
+            task.meta["platform"] = "douyin"
+            task.emit({"type": "meta", **task.meta})
             self.ui_tasks.run(
                 task,
                 self._run_download_collection_music_task(
@@ -1525,6 +1776,8 @@ try {
         ):
             title = _("批量下载收藏合集作品") + " (抖音)"
             task = self.ui_tasks.create("download.mix_collection", title)
+            task.meta["platform"] = "douyin"
+            task.emit({"type": "meta", **task.meta})
             self.ui_tasks.run(
                 task,
                 self._run_download_mix_collection_task(
@@ -1547,6 +1800,8 @@ try {
         ):
             title = _("批量下载视频原画") + " (TikTok)"
             task = self.ui_tasks.create("download.tiktok_original", title)
+            task.meta["platform"] = "tiktok"
+            task.emit({"type": "meta", **task.meta})
             self.ui_tasks.run(
                 task,
                 self._run_download_tiktok_original_task(
@@ -1583,7 +1838,7 @@ try {
                 id_prefix=f"{uuid4().hex}:",
             )
             try:
-                root, params, logger = self.record.run(self.parameter)
+                root, params, logger = self.record.run(self.parameter, tiktok=tiktok)
                 async with logger(root, console=self.console, **params) as record:
                     task.emit({"type": "phase", "name": "download"})
                     await self._handle_detail(
@@ -1597,6 +1852,35 @@ try {
                     )
             finally:
                 self.downloader.general_progress_object = original_progress
+
+    async def _run_download_kuaishou_detail_task(
+        self,
+        task: UITask,
+        *,
+        text: str,
+        cookie: str | None,
+        proxy: str | None,
+    ) -> None:
+        async with self._ui_task_lock:
+            from ..kuaishou import KuaishouService
+
+            task.emit({"type": "phase", "name": "download"})
+            service = KuaishouService()
+            result = await service.download_detail_text(
+                text,
+                cookie=cookie,
+                proxy=proxy,
+                progress_factory=lambda: EventProgress(
+                    task.emit,
+                    throttle_ms=200,
+                    id_prefix=f"{uuid4().hex}:",
+                ),
+            )
+            task.meta["platform"] = "kuaishou"
+            task.meta["works_count"] = int(result.get("works_count") or 0)
+            task.meta["ok_count"] = int(result.get("ok_count") or 0)
+            task.meta["download_root"] = result.get("download_root") or task.meta.get("download_root")
+            task.emit({"type": "meta", **task.meta})
 
     async def _run_download_account_task(
         self,

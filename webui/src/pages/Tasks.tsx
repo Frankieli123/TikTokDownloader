@@ -4,6 +4,7 @@ import { useSearchParams } from "react-router-dom"
 import { api } from "@/lib/api"
 import { notify } from "@/lib/notify"
 import type { UITask } from "@/types"
+import { usePlatform } from "@/lib/platform"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -54,6 +55,7 @@ const TYPE_LABELS: Record<string, string> = {
   "download.collection_music": "批量下载收藏音乐",
   "download.mix_collection": "批量下载收藏合集作品",
   "download.tiktok_original": "批量下载视频原画",
+  "download.kuaishou.detail": "下载快手作品",
   "collect.live": "获取直播拉流地址",
   "collect.comment": "采集作品评论数据",
   "collect.user": "采集账号详细数据",
@@ -72,6 +74,25 @@ function typeLabel(type: string) {
 export function TasksPage() {
   const [searchParams] = useSearchParams()
   const initialTaskId = searchParams.get("task")
+  const { platform } = usePlatform()
+  const supportedPlatform = platform === "douyin" || platform === "tiktok" || platform === "kuaishou"
+  const currentPlatform = platform
+
+  const taskMatchesPlatform = (task: UITask) => {
+    const metaPlatform = String(task.meta["platform"] ?? "")
+    if (metaPlatform) return metaPlatform === currentPlatform
+
+    const title = String(task.title || "")
+    const normalized = title.toLowerCase()
+
+    if (currentPlatform === "kuaishou") {
+      return normalized.includes("快手") || normalized.includes("kuaishou")
+    }
+
+    const detected = normalized.includes("tiktok") ? "tiktok" : title.includes("抖音") ? "douyin" : null
+    const target = currentPlatform === "tiktok" ? "tiktok" : "douyin"
+    return !detected || detected === target
+  }
 
   const [tasks, setTasks] = useState<UITask[]>([])
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(initialTaskId)
@@ -115,13 +136,33 @@ export function TasksPage() {
   }
 
   useEffect(() => {
+    if (!supportedPlatform) {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close()
+        eventSourceRef.current = null
+      }
+      setLogs([])
+      setProgress({})
+      setError(null)
+      setSelectedTaskId(null)
+      setTasks([])
+      return
+    }
     let mounted = true
     const load = async () => {
       try {
         const list = await api.listTasks()
         if (!mounted) return
-        setTasks(list)
-        if (!selectedTaskId && list.length > 0) setSelectedTaskId(list[0].id)
+        const filtered = list.filter(taskMatchesPlatform)
+        setTasks(filtered)
+
+        if (!selectedTaskId && filtered.length > 0) {
+          setSelectedTaskId(filtered[0].id)
+          return
+        }
+        if (selectedTaskId && !filtered.some((t) => t.id === selectedTaskId)) {
+          setSelectedTaskId(filtered[0]?.id ?? null)
+        }
       } catch (e) {
         if (!mounted) return
         setError(String(e))
@@ -134,9 +175,10 @@ export function TasksPage() {
       mounted = false
       clearInterval(interval)
     }
-  }, [selectedTaskId])
+  }, [selectedTaskId, currentPlatform, supportedPlatform])
 
   useEffect(() => {
+    if (!supportedPlatform) return
     if (eventSourceRef.current) {
       eventSourceRef.current.close()
       eventSourceRef.current = null
@@ -201,45 +243,51 @@ export function TasksPage() {
     return () => {
       es.close()
     }
-  }, [selectedTaskId])
+  }, [selectedTaskId, supportedPlatform])
 
   return (
-    <div className="grid gap-6 md:grid-cols-3">
-      <Card className="md:col-span-1">
-        <CardHeader className="py-4">
-          <CardTitle className="text-base">任务列表</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <ScrollArea className="h-[calc(100vh-12rem)]">
-            <div className="flex flex-col">
-              {tasks.map((task) => (
-                <button
-                  key={task.id}
-                  type="button"
-                  className={`flex w-full flex-col gap-2 border-b px-4 py-3 text-left transition-colors hover:bg-muted/50 ${
-                    selectedTaskId === task.id ? "bg-muted/60" : ""
-                  }`}
-                  onClick={() => setSelectedTaskId(task.id)}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="truncate text-sm font-medium">{task.title}</div>
-                    <Badge variant={statusVariant(task.status)} className="shrink-0" title={task.status}>
-                      {statusLabel(task.status)}
-                    </Badge>
-                  </div>
-                  <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                    <div className="truncate font-mono">{task.id}</div>
-                    <div className="shrink-0">{formatTime(task.created_at)}</div>
-                  </div>
-                </button>
-              ))}
-              {tasks.length === 0 && (
-                <div className="p-4 text-sm text-muted-foreground">暂无任务</div>
-              )}
-            </div>
-          </ScrollArea>
-        </CardContent>
-      </Card>
+    <div className="mx-auto w-full max-w-6xl">
+      {!supportedPlatform ? (
+        <Card>
+          <CardContent className="py-16 text-center text-sm text-muted-foreground">
+            该平台暂未接入
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-6 md:grid-cols-3">
+          <Card className="md:col-span-1">
+            <CardHeader className="py-4">
+              <CardTitle className="text-base">任务列表</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <ScrollArea className="h-[calc(100vh-12rem)]">
+                <div className="flex flex-col">
+                  {tasks.map((task) => (
+                    <button
+                      key={task.id}
+                      type="button"
+                      className={`flex w-full flex-col gap-2 border-b px-4 py-3 text-left transition-colors hover:bg-muted/50 ${
+                        selectedTaskId === task.id ? "bg-muted/60" : ""
+                      }`}
+                      onClick={() => setSelectedTaskId(task.id)}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="truncate text-sm font-medium">{task.title}</div>
+                        <Badge variant={statusVariant(task.status)} className="shrink-0" title={task.status}>
+                          {statusLabel(task.status)}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                        <div className="truncate font-mono">{task.id}</div>
+                        <div className="shrink-0">{formatTime(task.created_at)}</div>
+                      </div>
+                    </button>
+                  ))}
+                  {tasks.length === 0 && <div className="p-4 text-sm text-muted-foreground">暂无任务</div>}
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
 
       <Card className="md:col-span-2">
         <CardHeader className="py-4">
@@ -341,6 +389,8 @@ export function TasksPage() {
           </div>
         </CardContent>
       </Card>
+      </div>
+      )}
     </div>
   )
 }

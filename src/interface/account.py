@@ -222,9 +222,15 @@ class Account(API):
         if isinstance(value, (int, float)):
             date_ = start - timedelta(days=value)
         elif isinstance(value, str):
-            try:
-                date_ = datetime.strptime(value, "%Y/%m/%d").date()
-            except ValueError:
+            raw = value.strip()
+            date_ = None
+            for fmt in ("%Y/%m/%d", "%Y-%m-%d"):
+                try:
+                    date_ = datetime.strptime(raw, fmt).date()
+                    break
+                except ValueError:
+                    continue
+            if date_ is None:
                 self.log.warning(
                     _("作品{tip}发布日期无效 {date}").format(tip=tip, date=value)
                 )

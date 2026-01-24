@@ -70,6 +70,8 @@ class Settings(BaseModel):
     owner_url: OwnerUrl | dict[str, str] = {}
     owner_url_tiktok: None = None
     root: str | None = None
+    root_douyin: str | None = None
+    root_tiktok: str | None = None
     folder_name: str | None = None
     name_format: str | None = None
     desc_length: int | None = None

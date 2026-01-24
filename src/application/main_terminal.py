@@ -755,6 +755,7 @@ class TikTok:
         root, params, logger = self.record.run(
             self.parameter,
             blank=api,
+            tiktok=tiktok,
         )
         async with logger(
             root,
@@ -787,6 +788,7 @@ class TikTok:
             id_,
             name,
             mark,
+            tiktok=tiktok,
         )
         await self.download_detail_batch(
             data,
@@ -911,7 +913,7 @@ class TikTok:
         self.logger.info(_("已退出批量下载视频原画(TikTok)模式"))
 
     async def __detail_secondary_menu(self, menu, select="", *args, **kwargs):
-        root, params, logger = self.record.run(self.parameter)
+        root, params, logger = self.record.run(self.parameter, tiktok=True)
         async with logger(root, console=self.console, **params) as record:
             if not select:
                 select = choose(
@@ -932,7 +934,7 @@ class TikTok:
         self,
         tiktok=False,
     ):
-        root, params, logger = self.record.run(self.parameter)
+        root, params, logger = self.record.run(self.parameter, tiktok=tiktok)
         link_obj = self.links_tiktok if tiktok else self.links
         async with logger(root, console=self.console, **params) as record:
             while url := self._inquire_input(_("作品")):
@@ -976,7 +978,7 @@ class TikTok:
         self,
         tiktok=False,
     ):
-        root, params, logger = self.record.run(self.parameter)
+        root, params, logger = self.record.run(self.parameter, tiktok=tiktok)
         async with logger(root, console=self.console, **params) as record:
             await self._read_from_txt(
                 tiktok,

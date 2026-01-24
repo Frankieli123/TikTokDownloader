@@ -58,6 +58,7 @@ class Downloader:
         params: "Parameter",
         server_mode: bool = False,
     ):
+        self.params = params
         self.cleaner = params.CLEANER
         self.client: "AsyncClient" = params.client
         self.client_tiktok: "AsyncClient" = params.client_tiktok
@@ -66,7 +67,6 @@ class Downloader:
         self.log = params.logger
         self.xb = params.xb
         self.console = params.console
-        self.root = params.root
         self.folder_name = params.folder_name
         self.name_format = params.name_format
         self.desc_length = params.desc_length
@@ -87,11 +87,16 @@ class Downloader:
         self.recorder = params.recorder
         self.timeout = params.timeout
         self.ffmpeg = params.ffmpeg
-        self.cache = params.cache
         self.truncate = params.truncate
         self.general_progress_object: Callable = self.init_general_progress(
             server_mode,
         )
+
+    def _storage_root(self, tiktok: bool) -> Path:
+        return self.params.root_tiktok if tiktok else self.params.root_douyin
+
+    def _cache_root(self, tiktok: bool) -> Path:
+        return self.params.cache_tiktok if tiktok else self.params.cache
 
     def init_general_progress(
         self,
@@ -163,7 +168,7 @@ class Downloader:
             case "detail":
                 await self.run_general(data, tiktok, **kwargs)
             case "music":
-                await self.run_music(data, **kwargs)
+                await self.run_music(data, tiktok=tiktok, **kwargs)
             case "live":
                 await self.run_live(data, tiktok, **kwargs)
             case _:
@@ -194,6 +199,7 @@ class Downloader:
                 collect_id,
                 collect_name,
             ),
+            tiktok=tiktok,
         )
         await self.batch_processing(
             data,
@@ -202,7 +208,7 @@ class Downloader:
         )
 
     async def run_general(self, data: list[dict], tiktok: bool, **kwargs):
-        root = self.storage_folder(mode="detail")
+        root = self.storage_folder(mode="detail", tiktok=tiktok)
         await self.batch_processing(
             data,
             root,
@@ -212,9 +218,11 @@ class Downloader:
     async def run_music(
         self,
         data: list[dict],
+        *,
+        tiktok: bool = False,
         **kwargs,
     ):
-        root = self.root.joinpath("Music")
+        root = self._storage_root(tiktok).joinpath("Music")
         tasks = []
         for i in data:
             name = self.generate_music_name(i)
@@ -222,6 +230,7 @@ class Downloader:
                 root,
                 name,
                 False,
+                tiktok=tiktok,
             )
             self.download_music(
                 tasks,
@@ -241,7 +250,7 @@ class Downloader:
     async def run_live(
         self,
         data: list[tuple],
-        tiktok=False,
+        tiktok: bool = False,
         **kwargs,
     ):
         if not data or not self.download:
@@ -250,6 +259,7 @@ class Downloader:
         self.generate_live_commands(
             data,
             download_command,
+            tiktok=tiktok,
         )
         self.console.info(
             _("程序将会调用 ffmpeg 下载直播，关闭 DouK-Downloader 不会中断下载！"),
@@ -260,9 +270,11 @@ class Downloader:
         self,
         data: list[tuple],
         commands: list,
+        *,
+        tiktok: bool,
         suffix: str = "mp4",
     ):
-        root = self.root.joinpath("Live")
+        root = self._storage_root(tiktok).joinpath("Live")
         root.mkdir(exist_ok=True)
         for i, f, m in data:
             name = self.cleaner.filter_name(
@@ -289,6 +301,7 @@ class Downloader:
         )
 
     async def batch_processing(self, data: list[dict], root: Path, **kwargs):
+        tiktok = bool(kwargs.get("tiktok", False))
         count = SimpleNamespace(
             downloaded_image=set(),
             skipped_image=set(),
@@ -308,6 +321,7 @@ class Downloader:
                 root,
                 name,
                 self.folder_mode,
+                tiktok=tiktok,
             )
             params = {
                 "tasks": tasks,
@@ -374,11 +388,13 @@ class Downloader:
         root: Path,
         name: str,
         folder_mode=False,
+        *,
+        tiktok: bool = False,
     ) -> tuple[Path, Path]:
         """生成文件的临时路径和目标路径"""
         root = self.create_detail_folder(root, name, folder_mode)
         root.mkdir(exist_ok=True)
-        cache = self.cache.joinpath(name)
+        cache = self._cache_root(tiktok).joinpath(name)
         actual = root.joinpath(name)
         return cache, actual
 
@@ -779,7 +795,12 @@ class Downloader:
         mode: str = "",
         id_: str = "",
         name: str = "",
+        *,
+        tiktok: bool,
     ) -> Path:
+        platform_root = self._storage_root(tiktok)
+        download_root = platform_root.joinpath(self.folder_name)
+        download_root.mkdir(parents=True, exist_ok=True)
         match mode:
             case "post":
                 folder_name = _("UID{id_}_{name}_发布作品").format(id_=id_, name=name)
@@ -792,11 +813,19 @@ class Downloader:
             case "collects":
                 folder_name = _("CID{id_}_{name}_收藏夹作品").format(id_=id_, name=name)
             case "detail":
-                folder_name = self.folder_name
+                return download_root
             case _:
                 raise DownloaderError
-        folder = self.root.joinpath(folder_name)
-        folder.mkdir(exist_ok=True)
+
+        folder = download_root.joinpath(folder_name)
+        if (
+            legacy := platform_root.joinpath(folder_name)
+        ).exists() and not folder.exists():
+            try:
+                move(legacy, folder)
+            except Exception:
+                pass
+        folder.mkdir(parents=True, exist_ok=True)
         return folder
 
     def generate_detail_name(self, data: dict) -> str:

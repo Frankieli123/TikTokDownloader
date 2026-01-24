@@ -1,4 +1,4 @@
-import type { AppInfo, SettingsData, UIConfig, UITask, UpdateInfo } from "@/types"
+import type { AppInfo, KuaishouSettingsResponse, SettingsData, UIConfig, UITask, UpdateInfo } from "@/types"
 import { notify } from "@/lib/notify"
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -178,6 +178,17 @@ export const api = {
       body: JSON.stringify(data),
     })
   },
+  createDownloadKuaishouDetailTask: async (data: {
+    text: string
+    cookie?: string | null
+    proxy?: string | null
+  }): Promise<UITask> => {
+    return requestJson<UITask>("/ui-api/tasks/download/kuaishou/detail", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    })
+  },
   createDownloadTikTokOriginalTask: async (data: { text: string; proxy?: string | null }): Promise<UITask> => {
     return requestJson<UITask>("/ui-api/tasks/download/tiktok_original", {
       method: "POST",
@@ -282,5 +293,39 @@ export const api = {
   },
   stopClipboardMonitor: async (): Promise<{ running: boolean }> => {
     return requestJson<{ running: boolean }>("/ui-api/monitor/clipboard/stop", { method: "POST" })
+  },
+
+  getKuaishouSettings: async (): Promise<KuaishouSettingsResponse> => {
+    return requestJson<KuaishouSettingsResponse>("/ui-api/kuaishou/settings")
+  },
+  saveKuaishouSettings: async (data: {
+    data: Record<string, any>
+    record?: boolean
+  }): Promise<KuaishouSettingsResponse> => {
+    return requestJson<KuaishouSettingsResponse>("/ui-api/kuaishou/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    })
+  },
+  importKuaishouCookieFromClipboard: async (): Promise<{ cookie: string }> => {
+    return requestJson<{ cookie: string }>("/ui-api/kuaishou/cookie/import/clipboard", { method: "POST" })
+  },
+  importKuaishouCookieFromBrowser: async (data: { browser?: string | null }): Promise<{ browser?: string; cookie: string }> => {
+    return requestJson<{ browser?: string; cookie: string }>("/ui-api/kuaishou/cookie/import/browser", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    })
+  },
+  deleteKuaishouRecords: async (ids: string): Promise<{ ok: boolean }> => {
+    return requestJson<{ ok: boolean }>("/ui-api/kuaishou/recorder/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    })
+  },
+  clearKuaishouRecords: async (): Promise<{ ok: boolean }> => {
+    return requestJson<{ ok: boolean }>("/ui-api/kuaishou/recorder/clear", { method: "POST" })
   },
 }

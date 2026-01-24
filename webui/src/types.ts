@@ -99,6 +99,8 @@ export interface SettingsData {
   owner_url: OwnerUrlItem
   owner_url_tiktok: unknown | null
   root: string
+  root_douyin: string
+  root_tiktok: string
   folder_name: string
   name_format: string
   desc_length: number
@@ -129,4 +131,9 @@ export interface SettingsData {
   tiktok_platform: boolean
   browser_info: BrowserInfo
   browser_info_tiktok: TikTokBrowserInfo
+}
+
+export interface KuaishouSettingsResponse {
+  settings: Record<string, any>
+  record: boolean
 }

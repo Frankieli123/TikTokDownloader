@@ -171,7 +171,6 @@ class CollectsMix(API):
         data: Callable = lambda: {},
         method="GET",
         headers: dict = None,
-        proxy: str = None,
         *args,
         **kwargs,
     ):
@@ -186,7 +185,6 @@ class CollectsMix(API):
             data,
             method,
             headers,
-            proxy,
             *args,
             **kwargs,
         )

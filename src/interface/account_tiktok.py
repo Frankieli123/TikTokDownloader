@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import TYPE_CHECKING, Callable, Coroutine, Type, Union
 
 from src.interface.account import Account
@@ -133,6 +134,38 @@ class AccountTikTok(
             "needPinnedItemIds": "true",
             "video_encoding": "mp4",
         }
+
+    async def early_stop(self):
+        if self.favorite or not self.response:
+            return
+        oldest_ts: int | None = None
+        for item in reversed(self.response):
+            if not isinstance(item, dict):
+                continue
+            raw = item.get("createTime") or item.get("create_time") or item.get("create_timestamp")
+            if not raw:
+                continue
+            try:
+                ts = int(raw)
+            except (TypeError, ValueError):
+                try:
+                    ts = int(float(raw))
+                except (TypeError, ValueError):
+                    continue
+            if ts > 10_000_000_000:
+                ts = ts // 1000
+            if ts <= 0:
+                continue
+            oldest_ts = ts
+            break
+        if oldest_ts is None:
+            return
+        try:
+            oldest_date = datetime.fromtimestamp(oldest_ts).date()
+        except (OSError, OverflowError, ValueError):
+            return
+        if self.earliest > oldest_date:
+            self.finished = True
 
 
 async def test():

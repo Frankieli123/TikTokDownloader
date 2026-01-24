@@ -19,12 +19,16 @@ class Cache:
         mark: bool,
         name: bool,
     ):
+        self.parameter = parameter
         self.console = parameter.console
         self.log = parameter.logger  # 日志记录对象
         self.database = database
-        self.root = parameter.root  # 作品文件保存根目录
         self.mark = mark
         self.name = name
+
+    def _root(self, tiktok: bool) -> Path:
+        platform_root = self.parameter.root_tiktok if tiktok else self.parameter.root_douyin
+        return platform_root.joinpath(self.parameter.folder_name)
 
     async def update_cache(
         self,
@@ -34,9 +38,12 @@ class Cache:
         id_: str,
         name: str,
         mark: str,
+        tiktok: bool = False,
     ):
+        root = self._root(tiktok)
         if d := await self.has_cache(id_):
             self.__check_file(
+                root,
                 solo_mode,
                 prefix,
                 suffix,
@@ -58,6 +65,7 @@ class Cache:
 
     def __check_file(
         self,
+        root: Path,
         solo_mode: bool,
         prefix: str,
         suffix: str,
@@ -67,16 +75,17 @@ class Cache:
         data: dict,
     ):
         if not (
-            old_folder := self.root.joinpath(
+            old_folder := root.joinpath(
                 f"{prefix}{id_}_{data['mark'] or data['name']}_{suffix}"
             )
         ).is_dir():
             self.log.info(f"{old_folder} 文件夹不存在，自动跳过", False)
             return
         if data["mark"] != mark:
-            self.__rename_folder(old_folder, prefix, suffix, id_, mark)
+            self.__rename_folder(root, old_folder, prefix, suffix, id_, mark)
             if self.mark:
                 self.__scan_file(
+                    root,
                     solo_mode,
                     prefix,
                     suffix,
@@ -88,6 +97,7 @@ class Cache:
                 )
         if data["name"] != name and self.name:
             self.__scan_file(
+                root,
                 solo_mode,
                 prefix,
                 suffix,
@@ -99,13 +109,14 @@ class Cache:
 
     def __rename_folder(
         self,
+        root: Path,
         old_folder: Path,
         prefix: str,
         suffix: str,
         id_: str,
         mark: str,
     ):
-        new_folder = self.root.joinpath(f"{prefix}{id_}_{mark}_{suffix}")
+        new_folder = root.joinpath(f"{prefix}{id_}_{mark}_{suffix}")
         self.__rename(
             old_folder,
             new_folder,
@@ -136,6 +147,7 @@ class Cache:
 
     def __scan_file(
         self,
+        root: Path,
         solo_mode: bool,
         prefix: str,
         suffix: str,
@@ -145,8 +157,8 @@ class Cache:
         data: dict,
         key="name",
     ):
-        root = self.root.joinpath(f"{prefix}{id_}_{mark}_{suffix}")
-        item_list = root.iterdir()
+        folder = root.joinpath(f"{prefix}{id_}_{mark}_{suffix}")
+        item_list = folder.iterdir()
         if solo_mode:
             for f in item_list:
                 if f.is_dir():
@@ -168,7 +180,7 @@ class Cache:
                     )
         else:
             self.__batch_rename(
-                root,
+                folder,
                 item_list,
                 mark,
                 name,

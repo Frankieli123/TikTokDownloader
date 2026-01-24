@@ -621,8 +621,11 @@ class RecordManager:
         folder="",
         type_="detail",
         blank=False,
+        *,
+        tiktok: bool = False,
     ):
-        root = parameter.root.joinpath(
+        platform_root = parameter.root_tiktok if tiktok else parameter.root_douyin
+        root = platform_root.joinpath(
             name := parameter.CLEANER.filter_name(folder, "Data")
         )
         self.compatible(
@@ -630,7 +633,7 @@ class RecordManager:
             root,
             name,
         )
-        root.mkdir(exist_ok=True)
+        root.mkdir(parents=True, exist_ok=True)
         params = self.LoggerParams[type_]
         logger = (
             BaseTextLogger
